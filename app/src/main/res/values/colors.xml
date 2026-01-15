@@ -2,4 +2,22 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    
+    <!-- Primary Theme Colors -->
+    <color name="primary_blue">#4285F4</color>
+    <color name="primary_blue_dark">#3367D6</color>
+    <color name="light_blue">#8AB4F8</color>
+    <color name="light_blue_bg">#E8F0FE</color>
+    
+    <!-- Event Colors -->
+    <color name="event_purple">#7986CB</color>
+    <color name="event_pink">#F06292</color>
+    <color name="event_green">#81C784</color>
+    <color name="event_orange">#FFB74D</color>
+    <color name="event_teal">#4DB6AC</color>
+    
+    <!-- UI Colors -->
+    <color name="today_highlight">#E8F0FE</color>
+    <color name="weekend_text">#9E9E9E</color>
+    <color name="divider">#E0E0E0</color>
 </resources>

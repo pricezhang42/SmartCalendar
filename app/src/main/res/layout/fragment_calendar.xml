@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".ui.calendar.CalendarFragment">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- Week Header (for Week View) -->
+        <LinearLayout
+            android:id="@+id/weekHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="8dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/weekLabel"
+                android:layout_width="48dp"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:textSize="12sp"
+                android:textColor="@android:color/darker_gray"
+                tools:text="Week\n3" />
+
+            <LinearLayout
+                android:id="@+id/weekDaysContainer"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal" />
+
+        </LinearLayout>
+
+        <!-- Month View Container -->
+        <LinearLayout
+            android:id="@+id/monthViewContainer"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <!-- Weekday headers -->
+            <LinearLayout
+                android:id="@+id/weekdayHeaderRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingVertical="8dp">
+
+                <!-- Weekday labels added programmatically -->
+            </LinearLayout>
+
+            <!-- Month grid -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/monthRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:overScrollMode="never" />
+
+        </LinearLayout>
+
+        <!-- Week View Container -->
+        <ScrollView
+            android:id="@+id/weekViewContainer"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <!-- Time labels column -->
+                <LinearLayout
+                    android:id="@+id/timeLabelsColumn"
+                    android:layout_width="48dp"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <!-- Days columns -->
+                <LinearLayout
+                    android:id="@+id/weekDaysColumns"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="horizontal" />
+
+            </LinearLayout>
+
+        </ScrollView>
+
+    </LinearLayout>
+
+</FrameLayout>
