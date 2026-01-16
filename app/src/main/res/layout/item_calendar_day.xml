@@ -6,7 +6,7 @@
     android:gravity="center_horizontal"
     android:paddingVertical="4dp"
     android:minHeight="@dimen/day_cell_min_height"
-    android:background="@android:color/white">
+    android:background="@drawable/grid_item_border">
 
     <TextView
         android:id="@+id/dayNumber"

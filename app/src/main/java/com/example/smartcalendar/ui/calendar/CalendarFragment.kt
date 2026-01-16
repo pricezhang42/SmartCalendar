@@ -21,6 +21,7 @@ import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.Event
 import com.example.smartcalendar.data.repository.CalendarRepository
 import com.example.smartcalendar.databinding.FragmentCalendarBinding
+import com.example.smartcalendar.databinding.ItemCalendarDayBinding
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -290,8 +291,14 @@ class CalendarFragment : Fragment() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MonthViewHolder {
             val view = LayoutInflater.from(parent.context)
                 .inflate(R.layout.page_month, parent, false) as RecyclerView
+
+            // FORCE the RecyclerView to fill the entire ViewPager container
+            view.layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+
             view.layoutManager = GridLayoutManager(parent.context, 7)
-            view.isNestedScrollingEnabled = false
             return MonthViewHolder(view)
         }
 
@@ -303,11 +310,17 @@ class CalendarFragment : Fragment() {
             val days = generateMonthDays(cal)
             val events = getEventsForMonth(cal)
             
-            holder.recyclerView.adapter = MonthGridAdapter(days, events) { day ->
-                currentCalendar.set(Calendar.DAY_OF_MONTH, day.dayOfMonth)
-                currentCalendar.set(Calendar.MONTH, day.month)
-                currentCalendar.set(Calendar.YEAR, day.year)
-                viewMode = ViewMode.WEEK
+            // Use post to ensure RecyclerView is measured before calculating row height
+            holder.recyclerView.post {
+                val parentHeight = holder.recyclerView.height
+                val numRows = (days.size + 6) / 7 // Ceiling division
+                
+                holder.recyclerView.adapter = MonthGridAdapter(days, events, parentHeight, numRows) { day ->
+                    currentCalendar.set(Calendar.DAY_OF_MONTH, day.dayOfMonth)
+                    currentCalendar.set(Calendar.MONTH, day.month)
+                    currentCalendar.set(Calendar.YEAR, day.year)
+                    viewMode = ViewMode.WEEK
+                }
             }
         }
 
@@ -526,8 +539,12 @@ data class DayItem(
 class MonthGridAdapter(
     private val days: List<DayItem>,
     private val events: List<Event>,
+    private val parentHeight: Int,
+    private val numRows: Int,
     private val onDayClick: (DayItem) -> Unit
 ) : RecyclerView.Adapter<MonthGridAdapter.DayViewHolder>() {
+
+    private val rowHeight: Int = if (numRows > 0 && parentHeight > 0) parentHeight / numRows else 0
 
     class DayViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val dayNumber: TextView = view.findViewById(R.id.dayNumber)
@@ -535,14 +552,18 @@ class MonthGridAdapter(
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): DayViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_calendar_day, parent, false)
-        return DayViewHolder(view)
+        val binding = ItemCalendarDayBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return DayViewHolder(binding.root)
     }
 
     override fun onBindViewHolder(holder: DayViewHolder, position: Int) {
         val day = days[position]
         val context = holder.itemView.context
+
+        // Apply calculated row height to fill the grid
+        if (rowHeight > 0) {
+            holder.itemView.layoutParams.height = rowHeight
+        }
 
         holder.dayNumber.text = day.dayOfMonth.toString()
 

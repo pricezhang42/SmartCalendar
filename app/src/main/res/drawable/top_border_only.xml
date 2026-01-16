@@ -1,4 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
-  
-</selector>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Main background color -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+
+    <!-- The Top Border -->
+    <!-- We use negative insets for bottom, left, and right to hide those edges -->
+    <item
+        android:bottom="-1dp"
+        android:left="-1dp"
+        android:right="-1dp">
+        <shape android:shape="rectangle">
+            <stroke
+                android:width="0.5dp"
+                android:color="#E0E0E0" /> <!-- Use the same color as your grid lines -->
+        </shape>
+    </item>
+</layer-list>
