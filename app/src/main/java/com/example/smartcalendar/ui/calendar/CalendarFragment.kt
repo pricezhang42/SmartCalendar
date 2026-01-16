@@ -437,6 +437,19 @@ class CalendarFragment : Fragment() {
             val cal = weekStart.clone() as Calendar
 
             for (dayIndex in 0..6) {
+                // Wrap day column in a horizontal layout to add vertical divider
+                val dayWrapper = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+
+                // Add vertical divider line (for all days to create grid)
+                val verticalDivider = View(requireContext()).apply {
+                    setBackgroundColor(ContextCompat.getColor(requireContext(), R.color.divider))
+                    layoutParams = LinearLayout.LayoutParams(1, LinearLayout.LayoutParams.MATCH_PARENT)
+                }
+                dayWrapper.addView(verticalDivider)
+
                 val dayColumn = FrameLayout(requireContext()).apply {
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 }
@@ -488,7 +501,9 @@ class CalendarFragment : Fragment() {
                     dayColumn.addView(eventView)
                 }
 
-                container.addView(dayColumn)
+                // Add dayColumn to wrapper and wrapper to container
+                dayWrapper.addView(dayColumn)
+                container.addView(dayWrapper)
                 cal.add(Calendar.DAY_OF_MONTH, 1)
             }
         }

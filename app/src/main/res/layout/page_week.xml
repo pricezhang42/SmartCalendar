@@ -13,7 +13,7 @@
         <!-- Time labels column -->
         <LinearLayout
             android:id="@+id/timeLabelsColumn"
-            android:layout_width="48dp"
+            android:layout_width="40dp"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="@android:color/white" />
