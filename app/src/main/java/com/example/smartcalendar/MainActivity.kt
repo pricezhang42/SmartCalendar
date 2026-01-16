@@ -72,6 +72,10 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
                 R.id.CalendarFragment -> {
                     val fragment = getCurrentCalendarFragment()
                     supportActionBar?.title = fragment?.getTitle() ?: getString(R.string.view_month)
+                    // Register for title changes when swiping
+                    fragment?.setOnTitleChangeListener { title ->
+                        supportActionBar?.title = title
+                    }
                 }
                 R.id.MineFragment -> {
                     supportActionBar?.title = getString(R.string.nav_mine)
