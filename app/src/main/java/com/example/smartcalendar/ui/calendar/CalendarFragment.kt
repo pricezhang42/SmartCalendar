@@ -441,19 +441,30 @@ class CalendarFragment : Fragment() {
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 }
 
-                // Draw hour grid lines
+                // Draw hour grid lines with white background and bottom border
                 val linesContainer = LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
+                    setBackgroundColor(Color.WHITE)
                 }
                 for (hour in 0..23) {
-                    val line = View(context).apply {
-                        setBackgroundColor(ContextCompat.getColor(requireContext(), R.color.divider))
+                    val hourCell = LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setBackgroundColor(Color.WHITE)
                         layoutParams = LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             hourHeight
                         )
                     }
-                    linesContainer.addView(line)
+                    // Add a thin line at the top of each hour
+                    val line = View(context).apply {
+                        setBackgroundColor(ContextCompat.getColor(requireContext(), R.color.divider))
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            1 // 1px thin line
+                        )
+                    }
+                    hourCell.addView(line)
+                    linesContainer.addView(hourCell)
                 }
                 dayColumn.addView(linesContainer)
 
