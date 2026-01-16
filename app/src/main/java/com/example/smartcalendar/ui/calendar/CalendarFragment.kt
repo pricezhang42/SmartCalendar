@@ -494,10 +494,13 @@ class CalendarFragment : Fragment() {
 
                 val dayEvents = events.filter { event ->
                     event.startTime >= dayStart.timeInMillis && event.startTime <= dayEnd.timeInMillis
-                }
+                }.sortedBy { it.startTime }
 
-                dayEvents.forEach { event ->
-                    val eventView = createEventView(event, hourHeight)
+                // Calculate layout positions for overlapping events
+                val eventLayouts = calculateEventLayouts(dayEvents)
+                
+                eventLayouts.forEach { layout ->
+                    val eventView = createEventView(layout.event, hourHeight, layout.column, layout.totalColumns)
                     dayColumn.addView(eventView)
                 }
 
@@ -508,7 +511,45 @@ class CalendarFragment : Fragment() {
             }
         }
 
-        private fun createEventView(event: Event, hourHeight: Int): View {
+        /**
+         * Calculate layout positions for overlapping events.
+         * Returns a list of EventLayout with column position and total columns for each event.
+         */
+        private fun calculateEventLayouts(events: List<Event>): List<EventLayout> {
+            if (events.isEmpty()) return emptyList()
+            
+            val layouts = mutableListOf<EventLayout>()
+            val activeEvents = mutableListOf<EventLayout>()
+            
+            events.forEach { event ->
+                // Remove events that have ended before this one starts
+                activeEvents.removeAll { it.event.endTime <= event.startTime }
+                
+                // Find the first available column
+                val usedColumns = activeEvents.map { it.column }.toSet()
+                var column = 0
+                while (column in usedColumns) {
+                    column++
+                }
+                
+                val layout = EventLayout(event, column, 1)
+                activeEvents.add(layout)
+                layouts.add(layout)
+            }
+            
+            // Second pass: calculate total columns for each group of overlapping events
+            layouts.forEach { layout ->
+                val overlapping = layouts.filter { other ->
+                    layout.event.startTime < other.event.endTime && 
+                    layout.event.endTime > other.event.startTime
+                }
+                layout.totalColumns = (overlapping.maxOfOrNull { it.column } ?: 0) + 1
+            }
+            
+            return layouts
+        }
+
+        private fun createEventView(event: Event, hourHeight: Int, column: Int, totalColumns: Int): View {
             val eventCal = Calendar.getInstance()
             eventCal.timeInMillis = event.startTime
             val startHour = eventCal.get(Calendar.HOUR_OF_DAY)
@@ -532,6 +573,8 @@ class CalendarFragment : Fragment() {
                     else ContextCompat.getColor(requireContext(), R.color.event_purple)
                 )
                 setPadding(8, 4, 8, 4)
+                
+                // Calculate width and horizontal position for overlapping events
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     height
@@ -539,7 +582,31 @@ class CalendarFragment : Fragment() {
                     topMargin = topOffset
                     marginStart = 2
                     marginEnd = 2
+                    
+                    // If there are multiple columns, divide the width
+                    if (totalColumns > 1) {
+                        // Use weight-like calculation: each event gets 1/totalColumns of the width
+                        // Position is based on column index
+                        width = 0 // Will be set programmatically
+                    }
                 }
+                
+                // For overlapping events, we need to set width and position after layout
+                if (totalColumns > 1) {
+                    post {
+                        val parentWidth = (parent as? View)?.width ?: 0
+                        if (parentWidth > 0) {
+                            val eventWidth = (parentWidth - 4) / totalColumns // -4 for margins
+                            val leftPosition = column * eventWidth + 2
+                            
+                            layoutParams = FrameLayout.LayoutParams(eventWidth, height).apply {
+                                topMargin = topOffset
+                                marginStart = leftPosition
+                            }
+                        }
+                    }
+                }
+                
                 setOnClickListener {
                     (activity as? OnEventClickListener)?.onEventClick(event)
                 }
@@ -554,6 +621,15 @@ data class DayItem(
     val year: Int,
     val isCurrentMonth: Boolean,
     val isToday: Boolean
+)
+
+/**
+ * Helper class for event layout calculation in week view
+ */
+data class EventLayout(
+    val event: Event,
+    val column: Int,
+    var totalColumns: Int
 )
 
 /**
