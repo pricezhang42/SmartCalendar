@@ -596,8 +596,11 @@ class CalendarFragment : Fragment() {
                     post {
                         val parentWidth = (parent as? View)?.width ?: 0
                         if (parentWidth > 0) {
-                            val eventWidth = (parentWidth - 4) / totalColumns // -4 for margins
-                            val leftPosition = column * eventWidth + 2
+                            val gap = 1 // 1px gap between events
+                            val totalGaps = totalColumns - 1
+                            val availableWidth = parentWidth - (totalGaps * gap)
+                            val eventWidth = availableWidth / totalColumns
+                            val leftPosition = column * (eventWidth + gap)
                             
                             layoutParams = FrameLayout.LayoutParams(eventWidth, height).apply {
                                 topMargin = topOffset
