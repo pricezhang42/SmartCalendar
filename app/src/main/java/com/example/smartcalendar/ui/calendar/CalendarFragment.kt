@@ -315,11 +315,8 @@ class CalendarFragment : Fragment() {
                 val parentHeight = holder.recyclerView.height
                 val numRows = (days.size + 6) / 7 // Ceiling division
                 
-                holder.recyclerView.adapter = MonthGridAdapter(days, events, parentHeight, numRows) { day ->
-                    currentCalendar.set(Calendar.DAY_OF_MONTH, day.dayOfMonth)
-                    currentCalendar.set(Calendar.MONTH, day.month)
-                    currentCalendar.set(Calendar.YEAR, day.year)
-                    viewMode = ViewMode.WEEK
+                holder.recyclerView.adapter = MonthGridAdapter(days, events, parentHeight, numRows) { event ->
+                    (activity as? OnEventClickListener)?.onEventClick(event)
                 }
             }
         }
@@ -541,7 +538,7 @@ class MonthGridAdapter(
     private val events: List<Event>,
     private val parentHeight: Int,
     private val numRows: Int,
-    private val onDayClick: (DayItem) -> Unit
+    private val onEventClick: (Event) -> Unit
 ) : RecyclerView.Adapter<MonthGridAdapter.DayViewHolder>() {
 
     private val rowHeight: Int = if (numRows > 0 && parentHeight > 0) parentHeight / numRows else 0
@@ -610,11 +607,11 @@ class MonthGridAdapter(
             if (event.color != 0) {
                 chip.background.setTint(event.color)
             }
+            // Make event chips clickable for editing
+            chip.setOnClickListener {
+                onEventClick(event)
+            }
             holder.eventsContainer.addView(chip)
-        }
-
-        holder.itemView.setOnClickListener {
-            onDayClick(day)
         }
     }
 
