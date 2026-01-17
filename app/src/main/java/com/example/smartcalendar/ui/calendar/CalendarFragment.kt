@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -168,9 +169,35 @@ class CalendarFragment : Fragment() {
                 binding.monthViewContainer.visibility = View.GONE
                 binding.weekViewContainer.visibility = View.VISIBLE
                 updateWeekHeader(currentCalendar)
+                setupFixedTimeLabels()
             }
         }
         updateTitle()
+    }
+
+    private fun setupFixedTimeLabels() {
+        binding.fixedTimeLabelsColumn.removeAllViews()
+        val hourHeight = resources.getDimensionPixelSize(R.dimen.hour_height)
+
+        for (hour in 0..23) {
+            val label = TextView(context).apply {
+                text = when (hour) {
+                    0 -> "12 AM"
+                    12 -> "12 PM"
+                    in 1..11 -> "$hour AM"
+                    else -> "${hour - 12} PM"
+                }
+                textSize = 10f
+                gravity = Gravity.END or Gravity.TOP
+                setTextColor(Color.GRAY)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    hourHeight
+                )
+                setPadding(4, 0, 4, 0)
+            }
+            binding.fixedTimeLabelsColumn.addView(label)
+        }
     }
 
     private fun updateWeekHeader(calendar: Calendar) {
@@ -382,8 +409,8 @@ class CalendarFragment : Fragment() {
     inner class WeekPagerAdapter : RecyclerView.Adapter<WeekPagerAdapter.WeekViewHolder>() {
         
         inner class WeekViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-            val timeLabelsColumn: LinearLayout = itemView.findViewById(R.id.timeLabelsColumn)
             val weekDaysColumns: LinearLayout = itemView.findViewById(R.id.weekDaysColumns)
+            val scrollView: ScrollView = itemView as ScrollView
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): WeekViewHolder {
@@ -396,36 +423,15 @@ class CalendarFragment : Fragment() {
             val cal = Calendar.getInstance()
             cal.add(Calendar.WEEK_OF_YEAR, offset)
             
-            setupTimeLabels(holder.timeLabelsColumn)
             setupWeekColumns(holder.weekDaysColumns, cal)
+            
+            // Sync scroll between fixed time labels and this page
+            holder.scrollView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+                binding.fixedTimeLabelsScroll.scrollTo(0, scrollY)
+            }
         }
 
         override fun getItemCount(): Int = 1000
-
-        private fun setupTimeLabels(container: LinearLayout) {
-            container.removeAllViews()
-            val hourHeight = resources.getDimensionPixelSize(R.dimen.hour_height)
-
-            for (hour in 0..23) {
-                val label = TextView(context).apply {
-                    text = when (hour) {
-                        0 -> "12 AM"
-                        12 -> "12 PM"
-                        in 1..11 -> "$hour AM"
-                        else -> "${hour - 12} PM"
-                    }
-                    textSize = 10f
-                    gravity = Gravity.END or Gravity.TOP
-                    setTextColor(Color.GRAY)
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        hourHeight
-                    )
-                    setPadding(4, 0, 8, 0)
-                }
-                container.addView(label)
-            }
-        }
 
         private fun setupWeekColumns(container: LinearLayout, calendar: Calendar) {
             container.removeAllViews()
