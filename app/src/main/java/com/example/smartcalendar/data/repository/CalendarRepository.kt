@@ -165,6 +165,8 @@ class CalendarRepository(private val context: Context) {
             CalendarContract.Instances.RDATE,
             CalendarContract.Instances.EXDATE,
             CalendarContract.Instances.EXRULE,
+            CalendarContract.Instances.ORIGINAL_ID,
+            CalendarContract.Instances.ORIGINAL_INSTANCE_TIME,
             CalendarContract.Instances.EVENT_TIMEZONE,
             CalendarContract.Instances.HAS_ALARM
         )
@@ -201,6 +203,18 @@ class CalendarRepository(private val context: Context) {
      * Convert Instances cursor to Event object
      */
     private fun instanceCursorToEvent(cursor: Cursor): Event {
+        // Get originalId - may be null for non-exception events
+        val originalIdIndex = cursor.getColumnIndex(CalendarContract.Instances.ORIGINAL_ID)
+        val originalId = if (originalIdIndex >= 0 && !cursor.isNull(originalIdIndex)) {
+            cursor.getLong(originalIdIndex)
+        } else null
+        
+        // Get originalInstanceTime - may be null for non-exception events
+        val originalInstanceTimeIndex = cursor.getColumnIndex(CalendarContract.Instances.ORIGINAL_INSTANCE_TIME)
+        val originalInstanceTime = if (originalInstanceTimeIndex >= 0 && !cursor.isNull(originalInstanceTimeIndex)) {
+            cursor.getLong(originalInstanceTimeIndex)
+        } else null
+        
         return Event(
             id = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID)),
             calendarId = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Instances.CALENDAR_ID)),
@@ -215,6 +229,8 @@ class CalendarRepository(private val context: Context) {
             rdate = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.RDATE)),
             exdate = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.EXDATE)),
             exrule = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.EXRULE)),
+            originalId = originalId,
+            originalInstanceTime = originalInstanceTime,
             timeZone = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_TIMEZONE)) ?: TimeZone.getDefault().id,
             hasAlarm = cursor.getInt(cursor.getColumnIndexOrThrow(CalendarContract.Instances.HAS_ALARM)) == 1
         )
