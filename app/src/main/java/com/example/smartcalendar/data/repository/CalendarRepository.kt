@@ -89,6 +89,7 @@ class CalendarRepository(private val context: Context) {
             CalendarContract.Events.RRULE,
             CalendarContract.Events.RDATE,
             CalendarContract.Events.EXDATE,
+            CalendarContract.Events.EXRULE,
             CalendarContract.Events.EVENT_TIMEZONE,
             CalendarContract.Events.HAS_ALARM
         )
@@ -132,6 +133,94 @@ class CalendarRepository(private val context: Context) {
     }
 
     /**
+     * Get event instances within a time range from specified calendars.
+     * This method uses CalendarContract.Instances to get EXPANDED occurrences
+     * of recurring events, properly handling RRULE, RDATE, EXDATE, and EXRULE.
+     */
+    fun getEventInstances(
+        startTime: Long,
+        endTime: Long,
+        calendarIds: Set<Long>? = null
+    ): List<Event> {
+        val events = mutableListOf<Event>()
+        
+        // Build URI with time range for Instances query
+        val uri = CalendarContract.Instances.CONTENT_URI
+            .buildUpon()
+            .appendPath(startTime.toString())
+            .appendPath(endTime.toString())
+            .build()
+        
+        val projection = arrayOf(
+            CalendarContract.Instances.EVENT_ID,
+            CalendarContract.Instances.CALENDAR_ID,
+            CalendarContract.Instances.TITLE,
+            CalendarContract.Instances.DESCRIPTION,
+            CalendarContract.Instances.EVENT_LOCATION,
+            CalendarContract.Instances.BEGIN,
+            CalendarContract.Instances.END,
+            CalendarContract.Instances.ALL_DAY,
+            CalendarContract.Instances.DISPLAY_COLOR,
+            CalendarContract.Instances.RRULE,
+            CalendarContract.Instances.RDATE,
+            CalendarContract.Instances.EXDATE,
+            CalendarContract.Instances.EXRULE,
+            CalendarContract.Instances.EVENT_TIMEZONE,
+            CalendarContract.Instances.HAS_ALARM
+        )
+        
+        // Build selection for optional calendar filter
+        var selection: String? = null
+        var selectionArgs: Array<String>? = null
+        
+        if (calendarIds != null && calendarIds.isNotEmpty()) {
+            val placeholders = calendarIds.joinToString(",") { "?" }
+            selection = "${CalendarContract.Instances.CALENDAR_ID} IN ($placeholders)"
+            selectionArgs = calendarIds.map { it.toString() }.toTypedArray()
+        }
+        
+        val cursor: Cursor? = contentResolver.query(
+            uri,
+            projection,
+            selection,
+            selectionArgs,
+            "${CalendarContract.Instances.BEGIN} ASC"
+        )
+        
+        cursor?.use {
+            while (it.moveToNext()) {
+                val event = instanceCursorToEvent(it)
+                events.add(event)
+            }
+        }
+        
+        return events
+    }
+
+    /**
+     * Convert Instances cursor to Event object
+     */
+    private fun instanceCursorToEvent(cursor: Cursor): Event {
+        return Event(
+            id = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID)),
+            calendarId = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Instances.CALENDAR_ID)),
+            title = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.TITLE)) ?: "",
+            description = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.DESCRIPTION)) ?: "",
+            location = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_LOCATION)) ?: "",
+            startTime = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN)),
+            endTime = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Instances.END)),
+            isAllDay = cursor.getInt(cursor.getColumnIndexOrThrow(CalendarContract.Instances.ALL_DAY)) == 1,
+            color = cursor.getInt(cursor.getColumnIndexOrThrow(CalendarContract.Instances.DISPLAY_COLOR)),
+            rrule = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.RRULE)),
+            rdate = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.RDATE)),
+            exdate = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.EXDATE)),
+            exrule = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.EXRULE)),
+            timeZone = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_TIMEZONE)) ?: TimeZone.getDefault().id,
+            hasAlarm = cursor.getInt(cursor.getColumnIndexOrThrow(CalendarContract.Instances.HAS_ALARM)) == 1
+        )
+    }
+
+    /**
      * Get a single event by ID
      */
     fun getEvent(eventId: Long): Event? {
@@ -148,6 +237,7 @@ class CalendarRepository(private val context: Context) {
             CalendarContract.Events.RRULE,
             CalendarContract.Events.RDATE,
             CalendarContract.Events.EXDATE,
+            CalendarContract.Events.EXRULE,
             CalendarContract.Events.EVENT_TIMEZONE,
             CalendarContract.Events.HAS_ALARM
         )
@@ -182,6 +272,7 @@ class CalendarRepository(private val context: Context) {
             rrule = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.RRULE)),
             rdate = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.RDATE)),
             exdate = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.EXDATE)),
+            exrule = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.EXRULE)),
             timeZone = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.EVENT_TIMEZONE)) ?: TimeZone.getDefault().id,
             hasAlarm = cursor.getInt(cursor.getColumnIndexOrThrow(CalendarContract.Events.HAS_ALARM)) == 1
         )

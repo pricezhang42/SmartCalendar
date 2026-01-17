@@ -20,6 +20,7 @@ data class Event(
     val rrule: String? = null, // RFC 5545 recurrence rule
     val rdate: String? = null,
     val exdate: String? = null,
+    val exrule: String? = null, // RFC 5545 exception rule
     val timeZone: String = java.util.TimeZone.getDefault().id,
     val hasAlarm: Boolean = false
 ) {

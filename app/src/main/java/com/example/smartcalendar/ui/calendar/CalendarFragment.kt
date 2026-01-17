@@ -401,7 +401,7 @@ class CalendarFragment : Fragment() {
             end.set(Calendar.HOUR_OF_DAY, 23)
             end.set(Calendar.MINUTE, 59)
             
-            return repository.getEvents(start.timeInMillis, end.timeInMillis, selectedCalendarIds)
+            return repository.getEventInstances(start.timeInMillis, end.timeInMillis, selectedCalendarIds)
         }
     }
 
@@ -439,7 +439,7 @@ class CalendarFragment : Fragment() {
             val weekStart = getWeekStart(calendar)
             val weekEnd = getWeekEnd(calendar)
             
-            val events = repository.getEvents(weekStart.timeInMillis, weekEnd.timeInMillis, selectedCalendarIds)
+            val events = repository.getEventInstances(weekStart.timeInMillis, weekEnd.timeInMillis, selectedCalendarIds)
             val cal = weekStart.clone() as Calendar
 
             for (dayIndex in 0..6) {
