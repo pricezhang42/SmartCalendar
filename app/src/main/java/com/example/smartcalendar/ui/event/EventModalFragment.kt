@@ -1,18 +1,23 @@
 package com.example.smartcalendar.ui.event
 
+import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.ContentValues
 import android.os.Bundle
+import android.provider.CalendarContract
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
+import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.Event
 import com.example.smartcalendar.data.model.RecurrenceRule
 import com.example.smartcalendar.data.model.RepeatEndType
+import com.example.smartcalendar.data.repository.CalendarRepository
 import com.example.smartcalendar.databinding.FragmentEventModalBinding
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import java.text.SimpleDateFormat
@@ -27,6 +32,8 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private val binding get() = _binding!!
 
     private var existingEvent: Event? = null
+    private var originalEvent: Event? = null  // Store original state to detect changes
+    private var instanceStartTime: Long? = null  // Original instance time for recurring events
     private var selectedDate = Calendar.getInstance()
     private var startTime = Calendar.getInstance()
     private var endTime = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, 1) }
@@ -34,18 +41,35 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private var reminderMinutes: Int? = null
     private var repeatEnabled = false
     private var recurrenceRule = RecurrenceRule()
+    private var originalRrule: String? = null  // Original RRULE to detect changes
     private val selectedDaysOfWeek = mutableSetOf<String>()
     private var repeatEndType = RepeatEndType.REPEAT_COUNT
     private var occurrences = 10
 
+    private lateinit var repository: CalendarRepository
+
     var onSaveListener: ((Event) -> Unit)? = null
     var onDeleteListener: ((Long) -> Unit)? = null
+    var onRecurringEditListener: ((RecurringEditChoice, Event, Long?) -> Unit)? = null
+
+    enum class RecurringEditChoice {
+        THIS_EVENT,
+        THIS_AND_FOLLOWING,
+        ALL_EVENTS
+    }
 
     companion object {
         private const val ARG_EVENT_ID = "event_id"
         private const val ARG_EVENT_TITLE = "event_title"
+        private const val ARG_EVENT_DESCRIPTION = "event_description"
+        private const val ARG_EVENT_LOCATION = "event_location"
         private const val ARG_START_TIME = "start_time"
         private const val ARG_END_TIME = "end_time"
+        private const val ARG_RRULE = "rrule"
+        private const val ARG_ORIGINAL_ID = "original_id"
+        private const val ARG_ORIGINAL_INSTANCE_TIME = "original_instance_time"
+        private const val ARG_CALENDAR_ID = "calendar_id"
+        private const val ARG_IS_ALL_DAY = "is_all_day"
 
         fun newInstance(event: Event? = null, initialTime: Long? = null): EventModalFragment {
             return EventModalFragment().apply {
@@ -53,8 +77,15 @@ class EventModalFragment : BottomSheetDialogFragment() {
                     event?.let {
                         putLong(ARG_EVENT_ID, it.id)
                         putString(ARG_EVENT_TITLE, it.title)
+                        putString(ARG_EVENT_DESCRIPTION, it.description)
+                        putString(ARG_EVENT_LOCATION, it.location)
                         putLong(ARG_START_TIME, it.startTime)
                         putLong(ARG_END_TIME, it.endTime)
+                        putLong(ARG_CALENDAR_ID, it.calendarId)
+                        putBoolean(ARG_IS_ALL_DAY, it.isAllDay)
+                        it.rrule?.let { rrule -> putString(ARG_RRULE, rrule) }
+                        it.originalId?.let { origId -> putLong(ARG_ORIGINAL_ID, origId) }
+                        it.originalInstanceTime?.let { origTime -> putLong(ARG_ORIGINAL_INSTANCE_TIME, origTime) }
                     }
                     initialTime?.let {
                         putLong(ARG_START_TIME, it)
@@ -76,14 +107,32 @@ class EventModalFragment : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         
+        repository = CalendarRepository(requireContext())
+        
         arguments?.let { args ->
             if (args.containsKey(ARG_EVENT_ID)) {
+                val rrule = args.getString(ARG_RRULE)
+                val originalId = if (args.containsKey(ARG_ORIGINAL_ID)) args.getLong(ARG_ORIGINAL_ID) else null
+                val originalInstanceTime = if (args.containsKey(ARG_ORIGINAL_INSTANCE_TIME)) args.getLong(ARG_ORIGINAL_INSTANCE_TIME) else null
+                
                 existingEvent = Event(
                     id = args.getLong(ARG_EVENT_ID),
+                    calendarId = args.getLong(ARG_CALENDAR_ID, 0),
                     title = args.getString(ARG_EVENT_TITLE) ?: "",
+                    description = args.getString(ARG_EVENT_DESCRIPTION) ?: "",
+                    location = args.getString(ARG_EVENT_LOCATION) ?: "",
                     startTime = args.getLong(ARG_START_TIME),
-                    endTime = args.getLong(ARG_END_TIME)
+                    endTime = args.getLong(ARG_END_TIME),
+                    isAllDay = args.getBoolean(ARG_IS_ALL_DAY, false),
+                    rrule = rrule,
+                    originalId = originalId,
+                    originalInstanceTime = originalInstanceTime
                 )
+                
+                // Store original state for change detection
+                originalEvent = existingEvent
+                originalRrule = rrule
+                instanceStartTime = args.getLong(ARG_START_TIME)  // Store the instance time
             }
             if (args.containsKey(ARG_START_TIME)) {
                 startTime.timeInMillis = args.getLong(ARG_START_TIME)
@@ -387,11 +436,116 @@ class EventModalFragment : BottomSheetDialogFragment() {
             endTime = endTime.timeInMillis,
             isAllDay = isAllDay,
             reminderMinutes = reminderMinutes,
-            rrule = rrule
+            rrule = rrule,
+            originalId = existingEvent?.originalId,
+            originalInstanceTime = existingEvent?.originalInstanceTime
         )
 
-        onSaveListener?.invoke(event)
+        // Check if this is a recurring event being edited
+        val isRecurringEvent = originalRrule != null || existingEvent?.originalId != null
+        val rruleChanged = originalRrule != rrule
+        
+        if (isRecurringEvent && existingEvent != null) {
+            // Show recurring edit choice dialog
+            showRecurringEditDialog(event, rruleChanged)
+        } else {
+            // Normal save for non-recurring events
+            onSaveListener?.invoke(event)
+            dismiss()
+        }
+    }
+
+    private fun showRecurringEditDialog(event: Event, rruleChanged: Boolean) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_recurring_edit_choice, null)
+        val radioGroup = dialogView.findViewById<RadioGroup>(R.id.editChoiceGroup)
+        val optionThisEvent = dialogView.findViewById<View>(R.id.optionThisEvent)
+        val optionThisAndFollowing = dialogView.findViewById<View>(R.id.optionThisAndFollowing)
+        val optionAllEvents = dialogView.findViewById<View>(R.id.optionAllEvents)
+
+        // If RRULE changed, hide "This event" option
+        if (rruleChanged) {
+            optionThisEvent.visibility = View.GONE
+            // Check "All events" by default when RRULE changed
+            radioGroup.check(R.id.optionAllEvents)
+        } else {
+            // Check "This event" by default
+            radioGroup.check(R.id.optionThisEvent)
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setView(dialogView)
+            .setPositiveButton("OK") { _, _ ->
+                val choice = when (radioGroup.checkedRadioButtonId) {
+                    R.id.optionThisEvent -> RecurringEditChoice.THIS_EVENT
+                    R.id.optionThisAndFollowing -> RecurringEditChoice.THIS_AND_FOLLOWING
+                    R.id.optionAllEvents -> RecurringEditChoice.ALL_EVENTS
+                    else -> RecurringEditChoice.ALL_EVENTS
+                }
+                handleRecurringEditChoice(choice, event)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun handleRecurringEditChoice(choice: RecurringEditChoice, event: Event) {
+        val originalId = existingEvent?.originalId ?: existingEvent?.id ?: return
+        val instanceTime = instanceStartTime ?: return
+
+        when (choice) {
+            RecurringEditChoice.THIS_EVENT -> {
+                // Create an exception for this instance only
+                val exceptionId = repository.createException(originalId, instanceTime, event)
+                if (exceptionId > 0) {
+                    // Notify listener with the updated event
+                    onRecurringEditListener?.invoke(choice, event.copy(id = exceptionId), instanceTime)
+                }
+            }
+            RecurringEditChoice.THIS_AND_FOLLOWING -> {
+                // Split the series from this instance
+                val newSeriesId = repository.splitRecurringSeries(originalId, instanceTime, event)
+                if (newSeriesId > 0) {
+                    onRecurringEditListener?.invoke(choice, event.copy(id = newSeriesId), instanceTime)
+                }
+            }
+            RecurringEditChoice.ALL_EVENTS -> {
+                // Update the master event with changed fields only
+                val changedFields = getChangedFields(event)
+                if (changedFields.size() > 0) {
+                    repository.updateRecurringEventFields(originalId, changedFields)
+                }
+                onRecurringEditListener?.invoke(choice, event, instanceTime)
+            }
+        }
         dismiss()
+    }
+
+    private fun getChangedFields(newEvent: Event): ContentValues {
+        val values = ContentValues()
+        val original = originalEvent ?: return values
+
+        if (newEvent.title != original.title) {
+            values.put(CalendarContract.Events.TITLE, newEvent.title)
+        }
+        if (newEvent.description != original.description) {
+            values.put(CalendarContract.Events.DESCRIPTION, newEvent.description)
+        }
+        if (newEvent.location != original.location) {
+            values.put(CalendarContract.Events.EVENT_LOCATION, newEvent.location)
+        }
+        if (newEvent.isAllDay != original.isAllDay) {
+            values.put(CalendarContract.Events.ALL_DAY, if (newEvent.isAllDay) 1 else 0)
+        }
+        if (newEvent.rrule != original.rrule) {
+            if (newEvent.rrule != null) {
+                values.put(CalendarContract.Events.RRULE, newEvent.rrule)
+            } else {
+                values.putNull(CalendarContract.Events.RRULE)
+            }
+        }
+        // Note: startTime/endTime changes for "All events" would affect all instances
+        // which may not be the desired behavior, so we skip those for recurring updates
+
+        return values
     }
 
     override fun onDestroyView() {

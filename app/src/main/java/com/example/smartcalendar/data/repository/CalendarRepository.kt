@@ -416,4 +416,129 @@ class CalendarRepository(private val context: Context) {
             } else null
         }
     }
+
+    /**
+     * Create an exception for a recurring event instance.
+     * This creates a new event that overrides a single occurrence.
+     * @param originalEventId The ID of the parent recurring event
+     * @param instanceTime The start time of the instance being modified
+     * @param updatedEvent The event data with updated fields
+     * @return The ID of the newly created exception, or -1 if failed
+     */
+    fun createException(
+        originalEventId: Long,
+        instanceTime: Long,
+        updatedEvent: Event
+    ): Long {
+        val calendarId = if (updatedEvent.calendarId > 0) updatedEvent.calendarId else getPrimaryCalendarId()
+            ?: throw IllegalStateException("No calendar available")
+        
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.CALENDAR_ID, calendarId)
+            put(CalendarContract.Events.TITLE, updatedEvent.title)
+            put(CalendarContract.Events.DESCRIPTION, updatedEvent.description)
+            put(CalendarContract.Events.EVENT_LOCATION, updatedEvent.location)
+            put(CalendarContract.Events.DTSTART, updatedEvent.startTime)
+            put(CalendarContract.Events.DTEND, updatedEvent.endTime)
+            put(CalendarContract.Events.ALL_DAY, if (updatedEvent.isAllDay) 1 else 0)
+            put(CalendarContract.Events.EVENT_TIMEZONE, updatedEvent.timeZone)
+            put(CalendarContract.Events.ORIGINAL_ID, originalEventId)
+            put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, instanceTime)
+            put(CalendarContract.Events.ORIGINAL_ALL_DAY, if (updatedEvent.isAllDay) 1 else 0)
+            // Exceptions don't have their own RRULE
+            putNull(CalendarContract.Events.RRULE)
+        }
+        
+        val uri = contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+        val exceptionId = uri?.lastPathSegment?.toLongOrNull() ?: -1
+        
+        // Add reminder if specified
+        if (exceptionId > 0 && updatedEvent.reminderMinutes != null) {
+            addReminder(exceptionId, updatedEvent.reminderMinutes)
+        }
+        
+        return exceptionId
+    }
+
+    /**
+     * Split a recurring event series from a specific instance.
+     * The original event ends before this instance, and a new event starts from this instance.
+     * @param originalEventId The ID of the original recurring event
+     * @param splitTime The start time of the instance to split from
+     * @param newEventData The event data for the new series
+     * @return The ID of the newly created recurring event, or -1 if failed
+     */
+    fun splitRecurringSeries(
+        originalEventId: Long,
+        splitTime: Long,
+        newEventData: Event
+    ): Long {
+        // First, update the original event to end BEFORE the split time
+        val originalEvent = getEvent(originalEventId) ?: return -1
+        
+        // Modify the RRULE to add UNTIL clause before split time
+        val untilTime = splitTime - 1000 // 1 second before
+        val sdf = java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val untilString = sdf.format(java.util.Date(untilTime))
+        
+        val originalRrule = originalEvent.rrule ?: return -1
+        // Remove any existing UNTIL or COUNT clause and add new UNTIL
+        val modifiedRrule = originalRrule
+            .split(";")
+            .filter { !it.startsWith("UNTIL=") && !it.startsWith("COUNT=") }
+            .joinToString(";") + ";UNTIL=$untilString"
+        
+        val updateValues = ContentValues().apply {
+            put(CalendarContract.Events.RRULE, modifiedRrule)
+        }
+        val updateUri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, originalEventId)
+        contentResolver.update(updateUri, updateValues, null, null)
+        
+        // Now create the new recurring event starting from splitTime
+        return insertEvent(newEventData)
+    }
+
+    /**
+     * Update only specific fields of a recurring event (master record).
+     * This preserves exception-specific values for fields not being updated.
+     * @param eventId The ID of the event to update
+     * @param changedFields Map of field names to new values
+     * @return true if successful
+     */
+    fun updateRecurringEventFields(eventId: Long, changedFields: ContentValues): Boolean {
+        if (changedFields.size() == 0) return true
+        
+        val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+        val rowsUpdated = contentResolver.update(uri, changedFields, null, null)
+        return rowsUpdated > 0
+    }
+
+    /**
+     * Add an EXDATE to exclude a specific instance from a recurring event.
+     * @param eventId The ID of the recurring event
+     * @param instanceTime The time of the instance to exclude
+     * @return true if successful
+     */
+    fun addExdateToEvent(eventId: Long, instanceTime: Long): Boolean {
+        val event = getEvent(eventId) ?: return false
+        
+        val sdf = java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val exdateString = sdf.format(java.util.Date(instanceTime))
+        
+        val newExdate = if (event.exdate.isNullOrBlank()) {
+            exdateString
+        } else {
+            "${event.exdate},$exdateString"
+        }
+        
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.EXDATE, newExdate)
+        }
+        
+        val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+        val rowsUpdated = contentResolver.update(uri, values, null, null)
+        return rowsUpdated > 0
+    }
 }
