@@ -252,6 +252,10 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         modal.onSaveListener = { savedEvent ->
             saveEvent(savedEvent)
         }
+        modal.onRecurringEditListener = { choice, updatedEvent, instanceTime ->
+            // Refresh calendar view after recurring event edit
+            getCurrentCalendarFragment()?.loadCalendarData()
+        }
         modal.show(supportFragmentManager, "EventModal")
     }
 

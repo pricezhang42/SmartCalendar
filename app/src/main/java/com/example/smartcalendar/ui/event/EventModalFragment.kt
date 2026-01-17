@@ -41,10 +41,16 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private var reminderMinutes: Int? = null
     private var repeatEnabled = false
     private var recurrenceRule = RecurrenceRule()
-    private var originalRrule: String? = null  // Original RRULE to detect changes
     private val selectedDaysOfWeek = mutableSetOf<String>()
     private var repeatEndType = RepeatEndType.REPEAT_COUNT
     private var occurrences = 10
+    
+    // Store original recurrence state for comparison
+    private var originalRepeatEnabled = false
+    private var originalRecurrenceRule: RecurrenceRule? = null
+    private var originalDaysOfWeek = setOf<String>()
+    private var originalRepeatEndType = RepeatEndType.REPEAT_COUNT
+    private var originalOccurrences = 10
 
     private lateinit var repository: CalendarRepository
 
@@ -131,7 +137,6 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 
                 // Store original state for change detection
                 originalEvent = existingEvent
-                originalRrule = rrule
                 instanceStartTime = args.getLong(ARG_START_TIME)  // Store the instance time
             }
             if (args.containsKey(ARG_START_TIME)) {
@@ -167,6 +172,13 @@ class EventModalFragment : BottomSheetDialogFragment() {
                     it.count?.let { count -> occurrences = count }
                 }
             }
+            
+            // Store original recurrence state for comparison at save time
+            originalRepeatEnabled = repeatEnabled
+            originalRecurrenceRule = if (repeatEnabled) recurrenceRule.copy() else null
+            originalDaysOfWeek = selectedDaysOfWeek.toSet()
+            originalRepeatEndType = repeatEndType
+            originalOccurrences = occurrences
         }
 
         binding.allDaySwitch.isChecked = isAllDay
@@ -442,17 +454,46 @@ class EventModalFragment : BottomSheetDialogFragment() {
         )
 
         // Check if this is a recurring event being edited
-        val isRecurringEvent = originalRrule != null || existingEvent?.originalId != null
-        val rruleChanged = originalRrule != rrule
+        val isRecurringEvent = existingEvent?.rrule != null || existingEvent?.originalId != null
         
         if (isRecurringEvent && existingEvent != null) {
-            // Show recurring edit choice dialog
-            showRecurringEditDialog(event, rruleChanged)
+            // Compare current recurrence settings with original
+            val recurrenceChanged = hasRecurrenceSettingsChanged()
+            showRecurringEditDialog(event, recurrenceChanged)
         } else {
             // Normal save for non-recurring events
             onSaveListener?.invoke(event)
             dismiss()
         }
+    }
+
+    /**
+     * Compare current recurrence settings with original to detect changes
+     */
+    private fun hasRecurrenceSettingsChanged(): Boolean {
+        // If repeat was toggled on/off
+        if (repeatEnabled != originalRepeatEnabled) return true
+        
+        // If repeat is off, no recurrence settings to compare
+        if (!repeatEnabled) return false
+        
+        // Compare frequency
+        if (recurrenceRule.frequency != originalRecurrenceRule?.frequency) return true
+        
+        // Compare interval
+        val currentInterval = binding.intervalEditText.text.toString().toIntOrNull() ?: 1
+        if (currentInterval != (originalRecurrenceRule?.interval ?: 1)) return true
+        
+        // Compare days of week (for weekly)
+        if (selectedDaysOfWeek != originalDaysOfWeek) return true
+        
+        // Compare repeat end type
+        if (repeatEndType != originalRepeatEndType) return true
+        
+        // Compare occurrences (when using count)
+        if (repeatEndType == RepeatEndType.REPEAT_COUNT && occurrences != originalOccurrences) return true
+        
+        return false
     }
 
     private fun showRecurringEditDialog(event: Event, rruleChanged: Boolean) {
