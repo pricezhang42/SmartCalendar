@@ -253,12 +253,12 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
             saveEvent(savedEvent)
         }
         modal.onRecurringEditListener = { choice, updatedEvent, instanceTime ->
-            // Refresh calendar view after recurring event edit
-            getCurrentCalendarFragment()?.loadCalendarData()
+            // Refresh calendar view after recurring event edit with delay
+            refreshCalendarWithDelay()
         }
         modal.onDeleteListener = { eventId ->
-            // Refresh calendar view after event deletion
-            getCurrentCalendarFragment()?.loadCalendarData()
+            // Refresh calendar view after delete with delay
+            refreshCalendarWithDelay()
         }
         modal.show(supportFragmentManager, "EventModal")
     }
@@ -269,8 +269,17 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         } else {
             repository.insertEvent(event)
         }
-        // Refresh calendar view
-        getCurrentCalendarFragment()?.loadCalendarData()
+        // Refresh calendar view with delay
+        refreshCalendarWithDelay()
+    }
+
+    /**
+     * Refresh calendar data with a small delay to allow Calendar Provider to process changes
+     */
+    private fun refreshCalendarWithDelay() {
+        binding.root.postDelayed({
+            getCurrentCalendarFragment()?.loadCalendarData()
+        }, 300) // 300ms delay for Calendar Provider to sync
     }
 
     override fun onEventClick(event: Event) {

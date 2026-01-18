@@ -453,6 +453,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
+            android:gravity="center_vertical"
             android:layout_marginTop="16dp">
 
             <com.google.android.material.button.MaterialButton
@@ -460,9 +461,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/delete"
+                android:textColor="@android:color/holo_red_dark"
                 android:visibility="gone"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:textColor="@android:color/holo_red_dark" />
+                style="@style/Widget.MaterialComponents.Button.TextButton" />
 
             <View
                 android:layout_width="0dp"

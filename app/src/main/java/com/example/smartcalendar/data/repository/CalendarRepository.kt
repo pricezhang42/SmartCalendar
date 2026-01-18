@@ -8,8 +8,6 @@ import android.database.Cursor
 import android.provider.CalendarContract
 import com.example.smartcalendar.data.model.CalendarAccount
 import com.example.smartcalendar.data.model.Event
-import com.example.smartcalendar.data.model.RecurrenceRule
-import com.example.smartcalendar.data.model.RepeatEndType
 import java.util.TimeZone
 
 /**
@@ -93,32 +91,7 @@ class CalendarRepository(private val context: Context) {
             CalendarContract.Events.EXDATE,
             CalendarContract.Events.EXRULE,
             CalendarContract.Events.EVENT_TIMEZONE,
-            CalendarContract.Events.HAS_ALARM,
-            // Additional columns for debugging
-            CalendarContract.Events.DURATION,
-            CalendarContract.Events.ACCESS_LEVEL,
-            CalendarContract.Events.AVAILABILITY,
-            CalendarContract.Events.EVENT_COLOR,
-            CalendarContract.Events.EVENT_COLOR_KEY,
-            CalendarContract.Events.EVENT_END_TIMEZONE,
-            CalendarContract.Events.GUESTS_CAN_INVITE_OTHERS,
-            CalendarContract.Events.GUESTS_CAN_MODIFY,
-            CalendarContract.Events.GUESTS_CAN_SEE_GUESTS,
-            CalendarContract.Events.HAS_ATTENDEE_DATA,
-            CalendarContract.Events.HAS_EXTENDED_PROPERTIES,
-            CalendarContract.Events.IS_ORGANIZER,
-            CalendarContract.Events.LAST_DATE,
-            CalendarContract.Events.LAST_SYNCED,
-            CalendarContract.Events.ORGANIZER,
-            CalendarContract.Events.ORIGINAL_ALL_DAY,
-            CalendarContract.Events.ORIGINAL_ID,
-            CalendarContract.Events.ORIGINAL_INSTANCE_TIME,
-            CalendarContract.Events.ORIGINAL_SYNC_ID,
-            CalendarContract.Events.SELF_ATTENDEE_STATUS,
-            CalendarContract.Events.STATUS,
-            CalendarContract.Events.UID_2445,
-            CalendarContract.Events.DIRTY,
-            CalendarContract.Events.DELETED
+            CalendarContract.Events.HAS_ALARM
         )
         
         // Build selection for time range and optional calendar filter
@@ -223,15 +196,7 @@ class CalendarRepository(private val context: Context) {
             }
         }
         
-        // Filter out orphaned exceptions (events with originalId pointing to non-existent master)
-        val masterEventIds = mutableSetOf<Long>()
-        events.forEach { if (it.originalId == null) masterEventIds.add(it.id) }
-        
-        return events.filter { event ->
-            // Keep events without originalId (normal events and master events)
-            // Only keep exceptions if their master event exists
-            event.originalId == null || masterEventIds.contains(event.originalId) || getEvent(event.originalId) != null
-        }
+        return events
     }
 
     /**
@@ -290,32 +255,7 @@ class CalendarRepository(private val context: Context) {
             CalendarContract.Events.EXDATE,
             CalendarContract.Events.EXRULE,
             CalendarContract.Events.EVENT_TIMEZONE,
-            CalendarContract.Events.HAS_ALARM,
-            // Additional columns for debugging
-            CalendarContract.Events.DURATION,
-            CalendarContract.Events.ACCESS_LEVEL,
-            CalendarContract.Events.AVAILABILITY,
-            CalendarContract.Events.EVENT_COLOR,
-            CalendarContract.Events.EVENT_COLOR_KEY,
-            CalendarContract.Events.EVENT_END_TIMEZONE,
-            CalendarContract.Events.GUESTS_CAN_INVITE_OTHERS,
-            CalendarContract.Events.GUESTS_CAN_MODIFY,
-            CalendarContract.Events.GUESTS_CAN_SEE_GUESTS,
-            CalendarContract.Events.HAS_ATTENDEE_DATA,
-            CalendarContract.Events.HAS_EXTENDED_PROPERTIES,
-            CalendarContract.Events.IS_ORGANIZER,
-            CalendarContract.Events.LAST_DATE,
-            CalendarContract.Events.LAST_SYNCED,
-            CalendarContract.Events.ORGANIZER,
-            CalendarContract.Events.ORIGINAL_ALL_DAY,
-            CalendarContract.Events.ORIGINAL_ID,
-            CalendarContract.Events.ORIGINAL_INSTANCE_TIME,
-            CalendarContract.Events.ORIGINAL_SYNC_ID,
-            CalendarContract.Events.SELF_ATTENDEE_STATUS,
-            CalendarContract.Events.STATUS,
-            CalendarContract.Events.UID_2445,
-            CalendarContract.Events.DIRTY,
-            CalendarContract.Events.DELETED
+            CalendarContract.Events.HAS_ALARM
         )
         
         val selection = "${CalendarContract.Events._ID} = ?"
@@ -335,30 +275,6 @@ class CalendarRepository(private val context: Context) {
     }
 
     private fun cursorToEvent(cursor: Cursor): Event {
-        // Helper function to safely get nullable int
-        fun getIntOrNull(column: String): Int? {
-            val idx = cursor.getColumnIndex(column)
-            return if (idx >= 0 && !cursor.isNull(idx)) cursor.getInt(idx) else null
-        }
-        
-        // Helper function to safely get nullable long
-        fun getLongOrNull(column: String): Long? {
-            val idx = cursor.getColumnIndex(column)
-            return if (idx >= 0 && !cursor.isNull(idx)) cursor.getLong(idx) else null
-        }
-        
-        // Helper function to safely get nullable string
-        fun getStringOrNull(column: String): String? {
-            val idx = cursor.getColumnIndex(column)
-            return if (idx >= 0 && !cursor.isNull(idx)) cursor.getString(idx) else null
-        }
-        
-        // Helper function to safely get boolean (default false)
-        fun getBoolean(column: String, default: Boolean = false): Boolean {
-            val idx = cursor.getColumnIndex(column)
-            return if (idx >= 0 && !cursor.isNull(idx)) cursor.getInt(idx) == 1 else default
-        }
-
         return Event(
             id = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Events._ID)),
             calendarId = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Events.CALENDAR_ID)),
@@ -366,7 +282,7 @@ class CalendarRepository(private val context: Context) {
             description = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.DESCRIPTION)) ?: "",
             location = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.EVENT_LOCATION)) ?: "",
             startTime = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Events.DTSTART)),
-            endTime = getLongOrNull(CalendarContract.Events.DTEND) ?: cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Events.DTSTART)),
+            endTime = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Events.DTEND)),
             isAllDay = cursor.getInt(cursor.getColumnIndexOrThrow(CalendarContract.Events.ALL_DAY)) == 1,
             color = cursor.getInt(cursor.getColumnIndexOrThrow(CalendarContract.Events.DISPLAY_COLOR)),
             rrule = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.RRULE)),
@@ -374,32 +290,7 @@ class CalendarRepository(private val context: Context) {
             exdate = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.EXDATE)),
             exrule = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.EXRULE)),
             timeZone = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.EVENT_TIMEZONE)) ?: TimeZone.getDefault().id,
-            hasAlarm = cursor.getInt(cursor.getColumnIndexOrThrow(CalendarContract.Events.HAS_ALARM)) == 1,
-            // Additional fields
-            duration = getStringOrNull(CalendarContract.Events.DURATION),
-            accessLevel = getIntOrNull(CalendarContract.Events.ACCESS_LEVEL),
-            availability = getIntOrNull(CalendarContract.Events.AVAILABILITY),
-            eventColor = getIntOrNull(CalendarContract.Events.EVENT_COLOR),
-            eventColorKey = getStringOrNull(CalendarContract.Events.EVENT_COLOR_KEY),
-            eventEndTimezone = getStringOrNull(CalendarContract.Events.EVENT_END_TIMEZONE),
-            guestsCanInviteOthers = getBoolean(CalendarContract.Events.GUESTS_CAN_INVITE_OTHERS, true),
-            guestsCanModify = getBoolean(CalendarContract.Events.GUESTS_CAN_MODIFY),
-            guestsCanSeeGuests = getBoolean(CalendarContract.Events.GUESTS_CAN_SEE_GUESTS, true),
-            hasAttendeeData = getBoolean(CalendarContract.Events.HAS_ATTENDEE_DATA),
-            hasExtendedProperties = getBoolean(CalendarContract.Events.HAS_EXTENDED_PROPERTIES),
-            isOrganizer = getBoolean(CalendarContract.Events.IS_ORGANIZER, true),
-            lastDate = getLongOrNull(CalendarContract.Events.LAST_DATE),
-            lastSynced = getBoolean(CalendarContract.Events.LAST_SYNCED),
-            organizer = getStringOrNull(CalendarContract.Events.ORGANIZER),
-            originalAllDay = getIntOrNull(CalendarContract.Events.ORIGINAL_ALL_DAY)?.let { it == 1 },
-            originalId = getLongOrNull(CalendarContract.Events.ORIGINAL_ID),
-            originalInstanceTime = getLongOrNull(CalendarContract.Events.ORIGINAL_INSTANCE_TIME),
-            originalSyncId = getStringOrNull(CalendarContract.Events.ORIGINAL_SYNC_ID),
-            selfAttendeeStatus = getIntOrNull(CalendarContract.Events.SELF_ATTENDEE_STATUS),
-            status = getIntOrNull(CalendarContract.Events.STATUS),
-            uid2445 = getStringOrNull(CalendarContract.Events.UID_2445),
-            dirty = getBoolean(CalendarContract.Events.DIRTY),
-            deleted = getBoolean(CalendarContract.Events.DELETED)
+            hasAlarm = cursor.getInt(cursor.getColumnIndexOrThrow(CalendarContract.Events.HAS_ALARM)) == 1
         )
     }
 
@@ -477,22 +368,79 @@ class CalendarRepository(private val context: Context) {
     }
 
     /**
-     * Delete an event and all its exceptions (for recurring events)
+     * Delete an event
      * @return true if successful
      */
     fun deleteEvent(eventId: Long): Boolean {
-        // First, delete any exceptions that reference this event as their original
-        val exceptionUri = CalendarContract.Events.CONTENT_URI
-        contentResolver.delete(
-            exceptionUri,
-            "${CalendarContract.Events.ORIGINAL_ID} = ?",
-            arrayOf(eventId.toString())
-        )
-        
-        // Then delete the event itself
         val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
         val rowsDeleted = contentResolver.delete(uri, null, null)
         return rowsDeleted > 0
+    }
+
+    /**
+     * Delete a single instance of a recurring event by inserting an exception.
+     * Uses CONTENT_EXCEPTION_URI to properly create a cancelled exception.
+     * @param originalEventId The ID of the parent recurring event
+     * @param instanceTime The start time of the instance being deleted
+     * @return true if successful
+     */
+    fun deleteRecurringEventInstance(originalEventId: Long, instanceTime: Long): Boolean {
+        val originalEvent = getEvent(originalEventId) ?: return false
+        
+        // Insert a cancelled exception using CONTENT_EXCEPTION_URI
+        val exceptionUri = ContentUris.withAppendedId(
+            CalendarContract.Events.CONTENT_EXCEPTION_URI,
+            originalEventId
+        )
+        
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, instanceTime)
+            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CANCELED)
+        }
+        
+        return try {
+            val uri = contentResolver.insert(exceptionUri, values)
+            uri != null
+        } catch (e: Exception) {
+            android.util.Log.e("CalendarRepository", "Error deleting recurring instance", e)
+            false
+        }
+    }
+
+    /**
+     * Delete this and all following occurrences of a recurring event.
+     * This updates the original event's UNTIL clause to end before instanceTime.
+     * @param originalEventId The ID of the parent recurring event
+     * @param instanceTime The start time from which to delete
+     * @return true if successful
+     */
+    fun deleteRecurringEventFromInstance(originalEventId: Long, instanceTime: Long): Boolean {
+        val originalEvent = getEvent(originalEventId) ?: return false
+        
+        // Set UNTIL to one second before instanceTime
+        val untilTime = instanceTime - 1000
+        val dateFormat = java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", java.util.Locale.US)
+        dateFormat.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val untilStr = dateFormat.format(java.util.Date(untilTime))
+        
+        // Modify existing RRULE to add UNTIL clause
+        val existingRrule = originalEvent.rrule ?: return false
+        val newRrule = if (existingRrule.contains("UNTIL=") || existingRrule.contains("COUNT=")) {
+            // Replace existing UNTIL or COUNT with new UNTIL
+            existingRrule
+                .replace(Regex("UNTIL=[^;]*"), "UNTIL=$untilStr")
+                .replace(Regex("COUNT=[^;]*"), "UNTIL=$untilStr")
+        } else {
+            "$existingRrule;UNTIL=$untilStr"
+        }
+        
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.RRULE, newRrule)
+        }
+        
+        val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, originalEventId)
+        val rowsUpdated = contentResolver.update(uri, values, null, null)
+        return rowsUpdated > 0
     }
 
     /**
@@ -586,16 +534,16 @@ class CalendarRepository(private val context: Context) {
 
     /**
      * Split a recurring event series from a specific instance.
-     * The original event ends before this instance, and optionally a new event starts from this instance.
+     * The original event ends before this instance, and a new event starts from this instance.
      * @param originalEventId The ID of the original recurring event
      * @param splitTime The start time of the instance to split from
-     * @param newEventData The event data for the new series (null = just end series)
-     * @return The ID of the newly created event, 0 if no new event, or -1 if failed
+     * @param newEventData The event data for the new series
+     * @return The ID of the newly created recurring event, or -1 if failed
      */
     fun splitRecurringSeries(
         originalEventId: Long,
         splitTime: Long,
-        newEventData: Event?
+        newEventData: Event
     ): Long {
         // First, update the original event to end BEFORE the split time
         val originalEvent = getEvent(originalEventId) ?: return -1
@@ -619,13 +567,8 @@ class CalendarRepository(private val context: Context) {
         val updateUri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, originalEventId)
         contentResolver.update(updateUri, updateValues, null, null)
         
-        // Create the new event starting from splitTime (if provided)
-        // For delete "this and following", newEventData is null - we just end the series
-        return if (newEventData != null) {
-            insertEvent(newEventData)
-        } else {
-            0L // No new event created
-        }
+        // Now create the new recurring event starting from splitTime
+        return insertEvent(newEventData)
     }
 
     /**
@@ -656,79 +599,14 @@ class CalendarRepository(private val context: Context) {
         sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
         val exdateString = sdf.format(java.util.Date(instanceTime))
         
-        android.util.Log.d("CalendarRepository", "Adding EXDATE: $exdateString for instanceTime: $instanceTime to event $eventId")
-        
         val newExdate = if (event.exdate.isNullOrBlank()) {
             exdateString
         } else {
             "${event.exdate},$exdateString"
         }
         
-        // Important: Preserve RRULE when updating EXDATE
-        // Only update EXDATE and RRULE - don't touch DURATION
         val values = ContentValues().apply {
             put(CalendarContract.Events.EXDATE, newExdate)
-            // Preserve the recurrence rule
-            if (event.rrule != null) {
-                put(CalendarContract.Events.RRULE, event.rrule)
-            }
-        }
-        
-        val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
-        val rowsUpdated = contentResolver.update(uri, values, null, null)
-        android.util.Log.d("CalendarRepository", "EXDATE update result: $rowsUpdated rows updated, newExdate: $newExdate, rrule preserved: ${event.rrule}")
-        return rowsUpdated > 0
-    }
-
-    /**
-     * Shift the start time of a recurring event to skip the first occurrence.
-     * This is used when deleting the first occurrence since EXDATE doesn't work for DTSTART.
-     * @param eventId The ID of the recurring event
-     * @return true if successful
-     */
-    fun shiftRecurrenceStart(eventId: Long): Boolean {
-        val event = getEvent(eventId) ?: return false
-        val rrule = event.rrule ?: return false
-        
-        // Parse the recurrence rule to calculate the next occurrence
-        val recurrenceRule = RecurrenceRule.fromRRule(rrule) ?: return false
-        
-        // Calculate the shift based on frequency
-        val calendar = java.util.Calendar.getInstance()
-        calendar.timeInMillis = event.startTime
-        
-        when (recurrenceRule.frequency) {
-            Event.FREQ_DAILY -> calendar.add(java.util.Calendar.DAY_OF_YEAR, recurrenceRule.interval)
-            Event.FREQ_WEEKLY -> calendar.add(java.util.Calendar.WEEK_OF_YEAR, recurrenceRule.interval)
-            Event.FREQ_MONTHLY -> calendar.add(java.util.Calendar.MONTH, recurrenceRule.interval)
-            Event.FREQ_YEARLY -> calendar.add(java.util.Calendar.YEAR, recurrenceRule.interval)
-        }
-        
-        val newStartTime = calendar.timeInMillis
-        val duration = event.endTime - event.startTime
-        val newEndTime = newStartTime + duration
-        
-        android.util.Log.d("CalendarRepository", "Shifting DTSTART from ${event.startTime} to $newStartTime for event $eventId")
-        
-        // Update the event with new start/end times
-        // Also decrement COUNT if applicable
-        var updatedRrule = rrule
-        if (recurrenceRule.endType == RepeatEndType.REPEAT_COUNT && recurrenceRule.count != null) {
-            val newCount = recurrenceRule.count - 1
-            if (newCount <= 0) {
-                // No more occurrences left
-                return deleteEvent(eventId)
-            }
-            updatedRrule = recurrenceRule.copy(count = newCount).toRRule()
-        }
-        
-        val values = ContentValues().apply {
-            put(CalendarContract.Events.DTSTART, newStartTime)
-            // Use DURATION for recurring events
-            val durationSecs = duration / 1000
-            put(CalendarContract.Events.DURATION, "P${durationSecs}S")
-            putNull(CalendarContract.Events.DTEND)
-            put(CalendarContract.Events.RRULE, updatedRrule)
         }
         
         val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)

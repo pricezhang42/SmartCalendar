@@ -494,28 +494,17 @@ class EventModalFragment : BottomSheetDialogFragment() {
         val optionThisAndFollowing = dialogView.findViewById<View>(R.id.optionThisAndFollowing)
         val optionAllEvents = dialogView.findViewById<View>(R.id.optionAllEvents)
 
-        // Determine if this is the first occurrence of the recurring event
-        // by comparing the instance start time with the master event's start time
-        val isMasterEvent = isFirstOccurrence()
-
         // If RRULE changed, hide "This event" option
         if (rruleChanged) {
             optionThisEvent.visibility = View.GONE
-        }
-
-        // If first occurrence, hide "This and following" since it's same as "All events"
-        if (isMasterEvent) {
-            optionThisAndFollowing.visibility = View.GONE
-        }
-
-        // Set default selection
-        when {
-            rruleChanged -> radioGroup.check(R.id.optionAllEvents)
-            else -> radioGroup.check(R.id.optionThisEvent)
+            // Check "All events" by default when RRULE changed
+            radioGroup.check(R.id.optionAllEvents)
+        } else {
+            // Check "This event" by default
+            radioGroup.check(R.id.optionThisEvent)
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Edit recurring event")
             .setView(dialogView)
             .setPositiveButton("OK") { _, _ ->
                 val choice = when (radioGroup.checkedRadioButtonId) {
@@ -562,6 +551,84 @@ class EventModalFragment : BottomSheetDialogFragment() {
         dismiss()
     }
 
+    private fun deleteEvent() {
+        val event = existingEvent ?: return
+        val isRecurringEvent = event.rrule != null || event.originalId != null
+        
+        if (isRecurringEvent) {
+            showRecurringDeleteDialog()
+        } else {
+            // Simple confirmation for non-recurring events
+            AlertDialog.Builder(requireContext())
+                .setTitle("Delete Event")
+                .setMessage("Are you sure you want to delete this event?")
+                .setPositiveButton("Delete") { _, _ ->
+                    repository.deleteEvent(event.id)
+                    onDeleteListener?.invoke(event.id)
+                    dismiss()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+    }
+
+    private fun showRecurringDeleteDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_recurring_edit_choice, null)
+        val radioGroup = dialogView.findViewById<RadioGroup>(R.id.editChoiceGroup)
+        val optionThisEvent = dialogView.findViewById<View>(R.id.optionThisEvent)
+        val optionThisAndFollowing = dialogView.findViewById<View>(R.id.optionThisAndFollowing)
+        val optionAllEvents = dialogView.findViewById<View>(R.id.optionAllEvents)
+
+        // All options are available for delete
+        optionThisEvent.visibility = View.VISIBLE
+        optionThisAndFollowing.visibility = View.VISIBLE
+        optionAllEvents.visibility = View.VISIBLE
+        radioGroup.check(R.id.optionThisEvent)
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Delete Recurring Event")
+            .setView(dialogView)
+            .setPositiveButton("Delete") { _, _ ->
+                val choice = when (radioGroup.checkedRadioButtonId) {
+                    R.id.optionThisEvent -> RecurringEditChoice.THIS_EVENT
+                    R.id.optionThisAndFollowing -> RecurringEditChoice.THIS_AND_FOLLOWING
+                    R.id.optionAllEvents -> RecurringEditChoice.ALL_EVENTS
+                    else -> RecurringEditChoice.THIS_EVENT
+                }
+                handleRecurringDeleteChoice(choice)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun handleRecurringDeleteChoice(choice: RecurringEditChoice) {
+        val event = existingEvent ?: return
+        val masterEventId = event.originalId ?: event.id
+        val instanceTime = instanceStartTime ?: return
+
+        try {
+            when (choice) {
+                RecurringEditChoice.THIS_EVENT -> {
+                    // Delete only this instance using CONTENT_EXCEPTION_URI
+                    repository.deleteRecurringEventInstance(masterEventId, instanceTime)
+                }
+                RecurringEditChoice.THIS_AND_FOLLOWING -> {
+                    // End the series from this instance
+                    repository.deleteRecurringEventFromInstance(masterEventId, instanceTime)
+                }
+                RecurringEditChoice.ALL_EVENTS -> {
+                    // Delete the entire recurring event
+                    repository.deleteEvent(masterEventId)
+                }
+            }
+            onDeleteListener?.invoke(event.id)
+        } catch (e: Exception) {
+            android.util.Log.e("EventModalFragment", "Error deleting recurring event", e)
+            android.widget.Toast.makeText(context, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+        }
+        dismiss()
+    }
+
     private fun getChangedFields(newEvent: Event): ContentValues {
         val values = ContentValues()
         val original = originalForm ?: return values
@@ -591,142 +658,6 @@ class EventModalFragment : BottomSheetDialogFragment() {
         // which may not be the desired behavior, so we skip those for recurring updates
 
         return values
-    }
-
-    private fun deleteEvent() {
-        val event = existingEvent ?: return
-        
-        // Check if this is a recurring event
-        val isRecurringEvent = event.rrule != null || event.originalId != null
-        
-        if (isRecurringEvent) {
-            showRecurringDeleteDialog()
-        } else {
-            // Confirm delete for non-recurring event
-            AlertDialog.Builder(requireContext())
-                .setTitle("Delete event")
-                .setMessage("Are you sure you want to delete this event?")
-                .setPositiveButton("Delete") { _, _ ->
-                    repository.deleteEvent(event.id)
-                    onDeleteListener?.invoke(event.id)
-                    dismiss()
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-        }
-    }
-
-    private fun showRecurringDeleteDialog() {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_recurring_edit_choice, null)
-        val radioGroup = dialogView.findViewById<RadioGroup>(R.id.editChoiceGroup)
-        val optionThisEvent = dialogView.findViewById<View>(R.id.optionThisEvent)
-        val optionThisAndFollowing = dialogView.findViewById<View>(R.id.optionThisAndFollowing)
-        val optionAllEvents = dialogView.findViewById<View>(R.id.optionAllEvents)
-
-        // Determine if this is the first occurrence
-        val isFirstOccur = isFirstOccurrence()
-
-        // If first occurrence, hide "This and following" since it's same as "All events"
-        if (isFirstOccur) {
-            optionThisAndFollowing.visibility = View.GONE
-        }
-
-        // Default to "This event"
-        radioGroup.check(R.id.optionThisEvent)
-
-        AlertDialog.Builder(requireContext())
-            .setTitle("Delete recurring event")
-            .setView(dialogView)
-            .setPositiveButton("Delete") { _, _ ->
-                val choice = when (radioGroup.checkedRadioButtonId) {
-                    R.id.optionThisEvent -> RecurringEditChoice.THIS_EVENT
-                    R.id.optionThisAndFollowing -> RecurringEditChoice.THIS_AND_FOLLOWING
-                    R.id.optionAllEvents -> RecurringEditChoice.ALL_EVENTS
-                    else -> RecurringEditChoice.ALL_EVENTS
-                }
-                handleRecurringDeleteChoice(choice)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun handleRecurringDeleteChoice(choice: RecurringEditChoice) {
-        val event = existingEvent ?: return
-        val masterEventId = event.originalId ?: event.id
-        val instanceTime = instanceStartTime ?: return
-
-        android.util.Log.d("EventModalFragment", "handleRecurringDeleteChoice: choice=$choice, eventId=${event.id}, " +
-                "originalId=${event.originalId}, masterEventId=$masterEventId, instanceTime=$instanceTime")
-
-        try {
-            when (choice) {
-                RecurringEditChoice.THIS_EVENT -> {
-                    if (event.originalId != null) {
-                        // This is an exception - just delete the exception event
-                        android.util.Log.d("EventModalFragment", "Deleting exception event: ${event.id}")
-                        repository.deleteEvent(event.id)
-                    } else if (isFirstOccurrence()) {
-                        // First occurrence - shift DTSTART to next occurrence instead of EXDATE
-                        // EXDATE doesn't work well for the first occurrence (DTSTART)
-                        android.util.Log.d("EventModalFragment", "Deleting first occurrence - shifting DTSTART")
-                        repository.shiftRecurrenceStart(masterEventId)
-                    } else {
-                        // Regular instance - add EXDATE to exclude it
-                        android.util.Log.d("EventModalFragment", "Adding EXDATE for instance at $instanceTime to master $masterEventId")
-                        repository.addExdateToEvent(masterEventId, instanceTime)
-                    }
-                }
-                RecurringEditChoice.THIS_AND_FOLLOWING -> {
-                    // End the recurring series before this instance
-                    val splitTime = event.originalInstanceTime ?: instanceTime
-                    android.util.Log.d("EventModalFragment", "Splitting series at $splitTime for master $masterEventId")
-                    repository.splitRecurringSeries(masterEventId, splitTime, null)
-                    // If this was an exception, also delete it
-                    if (event.originalId != null) {
-                        repository.deleteEvent(event.id)
-                    }
-                }
-                RecurringEditChoice.ALL_EVENTS -> {
-                    // Delete the master event (all occurrences)
-                    android.util.Log.d("EventModalFragment", "Deleting all events, master: $masterEventId")
-                    repository.deleteEvent(masterEventId)
-                }
-            }
-            onRecurringEditListener?.invoke(choice, event, instanceTime)
-        } catch (e: Exception) {
-            android.util.Log.e("EventModalFragment", "Error deleting recurring event", e)
-            android.widget.Toast.makeText(context, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
-        }
-        dismiss()
-    }
-
-    /**
-     * Determine if the current instance is the first occurrence of a recurring event.
-     * This is done by fetching the master event from CalendarContract.Events and comparing
-     * the instance start time with the master event's DTSTART.
-     * Note: The first occurrence can be an exception if it was previously edited.
-     */
-    private fun isFirstOccurrence(): Boolean {
-        val event = existingEvent ?: return false
-        val instTime = instanceStartTime ?: return false
-        
-        // Get the master event ID (originalId for exceptions, event.id for regular instances)
-        val masterEventId = event.originalId ?: event.id
-        
-        // Get the master event from CalendarContract.Events
-        val masterEvent = repository.getEvent(masterEventId) ?: return false
-        
-        // If master has no rrule, it's not a recurring event
-        if (masterEvent.rrule == null) return false
-        
-        // For exceptions, compare originalInstanceTime with master's startTime
-        // For regular instances, compare instanceStartTime with master's startTime
-        val timeToCompare = event.originalInstanceTime ?: instTime
-        
-        // Compare with master event's start time
-        // Allow a small tolerance for timezone differences (within same day)
-        val timeDiff = kotlin.math.abs(timeToCompare - masterEvent.startTime)
-        return timeDiff < 24 * 60 * 60 * 1000 // Within 24 hours means same day occurrence
     }
 
     override fun onDestroyView() {

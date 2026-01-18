@@ -101,13 +101,9 @@ class CalendarFragment : Fragment() {
             selectedCalendarIds = repository.getCalendars().map { it.id }.toSet()
         }
         
-        // Refresh only the current visible page for efficiency
-        val monthPosition = binding.monthViewPager.currentItem
-        val weekPosition = binding.weekViewPager.currentItem
-        
-        // Use targeted notifications instead of notifyDataSetChanged()
-        binding.monthViewPager.adapter?.notifyItemChanged(monthPosition)
-        binding.weekViewPager.adapter?.notifyItemChanged(weekPosition)
+        // Refresh all pages to ensure data consistency after CRUD operations
+        binding.monthViewPager.adapter?.notifyDataSetChanged()
+        binding.weekViewPager.adapter?.notifyDataSetChanged()
     }
 
     private fun setupWeekdayHeaders() {
