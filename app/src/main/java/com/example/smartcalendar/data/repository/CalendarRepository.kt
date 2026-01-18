@@ -192,11 +192,43 @@ class CalendarRepository(private val context: Context) {
         cursor?.use {
             while (it.moveToNext()) {
                 val event = instanceCursorToEvent(it)
-                events.add(event)
+                // Filter out instances that are past the UNTIL date in RRULE
+                // (CalendarContract.Instances may not immediately respect RRULE changes)
+                if (isInstanceValid(event)) {
+                    events.add(event)
+                }
             }
         }
         
         return events
+    }
+
+    /**
+     * Check if an recurring event instance should be displayed based on its RRULE.
+     * This filters out instances that are past the UNTIL date when Calendar Provider
+     * hasn't synced the RRULE changes yet.
+     */
+    private fun isInstanceValid(event: Event): Boolean {
+        val rrule = event.rrule ?: return true // Non-recurring events are always valid
+        
+        // Parse UNTIL from RRULE
+        val untilMatch = Regex("UNTIL=([^;]+)").find(rrule)
+        if (untilMatch != null) {
+            val untilStr = untilMatch.groupValues[1]
+            try {
+                val dateFormat = java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", java.util.Locale.US)
+                dateFormat.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                val untilDate = dateFormat.parse(untilStr)
+                if (untilDate != null && event.startTime > untilDate.time) {
+                    // Instance is past UNTIL date - filter it out
+                    return false
+                }
+            } catch (e: Exception) {
+                // If we can't parse UNTIL, don't filter
+            }
+        }
+        
+        return true
     }
 
     /**

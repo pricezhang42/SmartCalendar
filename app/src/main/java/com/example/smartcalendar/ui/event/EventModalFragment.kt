@@ -603,8 +603,15 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
     private fun handleRecurringDeleteChoice(choice: RecurringEditChoice) {
         val event = existingEvent ?: return
-        val masterEventId = event.originalId ?: event.id
         val instanceTime = instanceStartTime ?: return
+        
+        // For instances from CalendarContract.Instances, EVENT_ID is the master event ID
+        // originalId is only set for exception events
+        val masterEventId = event.originalId ?: event.id
+        
+        // Check if this is the first occurrence by comparing with master event start time
+        val masterEvent = repository.getEvent(masterEventId)
+        val isFirstOccurrence = masterEvent?.startTime == instanceTime
 
         try {
             when (choice) {
@@ -613,8 +620,13 @@ class EventModalFragment : BottomSheetDialogFragment() {
                     repository.deleteRecurringEventInstance(masterEventId, instanceTime)
                 }
                 RecurringEditChoice.THIS_AND_FOLLOWING -> {
-                    // End the series from this instance
-                    repository.deleteRecurringEventFromInstance(masterEventId, instanceTime)
+                    if (isFirstOccurrence) {
+                        // First occurrence + this and following = delete entire event
+                        repository.deleteEvent(masterEventId)
+                    } else {
+                        // End the series from this instance
+                        repository.deleteRecurringEventFromInstance(masterEventId, instanceTime)
+                    }
                 }
                 RecurringEditChoice.ALL_EVENTS -> {
                     // Delete the entire recurring event
