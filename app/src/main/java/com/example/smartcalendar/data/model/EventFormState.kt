@@ -17,7 +17,8 @@ data class EventFormState(
     val interval: Int = 1,
     val daysOfWeek: Set<String> = emptySet(),
     val repeatEndType: RepeatEndType = RepeatEndType.REPEAT_COUNT,
-    val occurrences: Int = 10
+    val occurrences: Int = 10,
+    val timeZone: String = java.util.TimeZone.getDefault().id
 ) {
     /**
      * Check if recurrence settings have changed compared to another form state
@@ -57,7 +58,8 @@ data class EventFormState(
             reminderMinutes = reminderMinutes,
             rrule = rrule,
             originalId = originalId,
-            originalInstanceTime = originalInstanceTime
+            originalInstanceTime = originalInstanceTime,
+            timeZone = timeZone
         )
     }
 
@@ -97,7 +99,8 @@ data class EventFormState(
                 interval = interval,
                 daysOfWeek = daysOfWeek,
                 repeatEndType = repeatEndType,
-                occurrences = occurrences
+                occurrences = occurrences,
+                timeZone = event.timeZone
             )
         }
     }

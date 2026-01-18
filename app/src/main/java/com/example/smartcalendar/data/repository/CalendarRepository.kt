@@ -338,14 +338,20 @@ class CalendarRepository(private val context: Context) {
             put(CalendarContract.Events.DESCRIPTION, event.description)
             put(CalendarContract.Events.EVENT_LOCATION, event.location)
             put(CalendarContract.Events.DTSTART, event.startTime)
-            put(CalendarContract.Events.DTEND, event.endTime)
             put(CalendarContract.Events.ALL_DAY, if (event.isAllDay) 1 else 0)
             put(CalendarContract.Events.EVENT_TIMEZONE, event.timeZone)
             
             if (event.rrule != null) {
+                // Recurring event: use DURATION instead of DTEND
                 put(CalendarContract.Events.RRULE, event.rrule)
+                val duration = "P${(event.endTime - event.startTime) / 1000}S"
+                put(CalendarContract.Events.DURATION, duration)
+                putNull(CalendarContract.Events.DTEND)
             } else {
+                // Non-recurring event: use DTEND and clear DURATION
                 putNull(CalendarContract.Events.RRULE)
+                putNull(CalendarContract.Events.DURATION)
+                put(CalendarContract.Events.DTEND, event.endTime)
             }
         }
         

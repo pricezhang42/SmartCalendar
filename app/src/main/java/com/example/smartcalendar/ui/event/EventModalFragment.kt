@@ -460,19 +460,25 @@ class EventModalFragment : BottomSheetDialogFragment() {
      */
     private fun handleRepeatTurnedOff(event: Event) {
         val instanceTime = instanceStartTime ?: return
+        val calendarId = existingEvent?.calendarId ?: return
         
-        // If no originalId, this is the master event itself (first occurrence)
-        if (existingEvent?.originalId == null) {
-            val masterEventId = existingEvent?.id ?: return
-            // First occurrence: Just update the master event to remove recurrence
-            val updatedEvent = event.copy(id = masterEventId)
-            repository.updateEvent(updatedEvent)
-            onRecurringEditListener?.invoke(RecurringEditChoice.ALL_EVENTS, updatedEvent, instanceTime)
-        } else {
-            // Later occurrence: End the original series and create new non-recurring event
-            val masterEventId = existingEvent?.originalId ?: return
-            repository.splitRecurringSeries(masterEventId, instanceTime, event)
-            onRecurringEditListener?.invoke(RecurringEditChoice.THIS_AND_FOLLOWING, event, instanceTime)
+        try {
+            // If no originalId, this is the master event itself (first occurrence)
+            if (existingEvent?.originalId == null) {
+                val masterEventId = existingEvent?.id ?: return
+                // First occurrence: Just update the master event to remove recurrence
+                val updatedEvent = event.copy(id = masterEventId, calendarId = calendarId)
+                repository.updateEvent(updatedEvent)
+                onRecurringEditListener?.invoke(RecurringEditChoice.ALL_EVENTS, updatedEvent, instanceTime)
+            } else {
+                // Later occurrence: End the original series and create new non-recurring event
+                val masterEventId = existingEvent?.originalId ?: return
+                repository.splitRecurringSeries(masterEventId, instanceTime, event.copy(calendarId = calendarId))
+                onRecurringEditListener?.invoke(RecurringEditChoice.THIS_AND_FOLLOWING, event, instanceTime)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("EventModalFragment", "Error turning off repeat", e)
+            android.widget.Toast.makeText(context, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
         }
         dismiss()
     }
