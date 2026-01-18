@@ -256,6 +256,10 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
             // Refresh calendar view after recurring event edit
             getCurrentCalendarFragment()?.loadCalendarData()
         }
+        modal.onDeleteListener = { eventId ->
+            // Refresh calendar view after event deletion
+            getCurrentCalendarFragment()?.loadCalendarData()
+        }
         modal.show(supportFragmentManager, "EventModal")
     }
 

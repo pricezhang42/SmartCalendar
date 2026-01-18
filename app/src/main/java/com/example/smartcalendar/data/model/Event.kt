@@ -5,6 +5,7 @@ import android.provider.CalendarContract
 /**
  * Event data class compatible with Google Calendar Provider.
  * Maps to CalendarContract.Events fields.
+ * All fields from CalendarContract.EventsColumns are included for debugging.
  */
 data class Event(
     val id: Long = 0,
@@ -24,7 +25,30 @@ data class Event(
     val originalId: Long? = null, // ID of the recurring event this is an exception of
     val originalInstanceTime: Long? = null, // Original occurrence time that was modified
     val timeZone: String = java.util.TimeZone.getDefault().id,
-    val hasAlarm: Boolean = false
+    val hasAlarm: Boolean = false,
+    // Additional fields for debugging
+    val duration: String? = null, // RFC 2445 duration format (e.g., "PT1H" for 1 hour)
+    val accessLevel: Int? = null, // ACCESS_DEFAULT, ACCESS_CONFIDENTIAL, ACCESS_PRIVATE, ACCESS_PUBLIC
+    val availability: Int? = null, // AVAILABILITY_BUSY, AVAILABILITY_FREE, AVAILABILITY_TENTATIVE
+    val eventColor: Int? = null, // Secondary color for event
+    val eventColorKey: String? = null, // Key for color lookup
+    val eventEndTimezone: String? = null, // End timezone
+    val guestsCanInviteOthers: Boolean = true,
+    val guestsCanModify: Boolean = false,
+    val guestsCanSeeGuests: Boolean = true,
+    val hasAttendeeData: Boolean = false,
+    val hasExtendedProperties: Boolean = false,
+    val isOrganizer: Boolean = true,
+    val lastDate: Long? = null, // Last date event repeats on (computed from RRULE)
+    val lastSynced: Boolean = false,
+    val organizer: String? = null, // Email of organizer
+    val originalAllDay: Boolean? = null, // Original allDay status for exceptions
+    val originalSyncId: String? = null, // Sync ID of original recurring event
+    val selfAttendeeStatus: Int? = null, // User's attendance status
+    val status: Int? = null, // STATUS_TENTATIVE, STATUS_CONFIRMED, STATUS_CANCELED
+    val uid2445: String? = null, // RFC 2445 UID
+    val dirty: Boolean = false, // Has local changes not synced
+    val deleted: Boolean = false // Soft deleted
 ) {
     companion object {
         // Reminder options in minutes
@@ -46,6 +70,22 @@ data class Event(
 
         // Days of week for weekly recurrence
         val DAYS_OF_WEEK = listOf("SU", "MO", "TU", "WE", "TH", "FR", "SA")
+
+        // Access level constants
+        const val ACCESS_DEFAULT = 0
+        const val ACCESS_CONFIDENTIAL = 1
+        const val ACCESS_PRIVATE = 2
+        const val ACCESS_PUBLIC = 3
+
+        // Availability constants
+        const val AVAILABILITY_BUSY = 0
+        const val AVAILABILITY_FREE = 1
+        const val AVAILABILITY_TENTATIVE = 2
+
+        // Status constants
+        const val STATUS_TENTATIVE = 0
+        const val STATUS_CONFIRMED = 1
+        const val STATUS_CANCELED = 2
     }
 }
 
