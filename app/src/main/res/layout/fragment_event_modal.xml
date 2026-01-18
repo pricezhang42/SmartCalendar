@@ -38,6 +38,50 @@
 
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- Calendar Picker Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/label_calendar"
+                android:textSize="16sp"
+                android:textColor="@android:color/black" />
+
+            <LinearLayout
+                android:id="@+id/calendarRow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="8dp"
+                android:background="?attr/selectableItemBackground">
+
+                <View
+                    android:id="@+id/calendarColor"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/circle_button_background" />
+
+                <TextView
+                    android:id="@+id/calendarValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="16sp"
+                    android:textColor="@color/primary_blue" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+
         <!-- Date Row -->
         <LinearLayout
             android:layout_width="match_parent"

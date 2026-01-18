@@ -51,6 +51,9 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         supportActionBar?.title = getString(R.string.view_month)
 
         repository = CalendarRepository(this)
+        
+        // Create SmartCalendar local calendars if they don't exist
+        repository.ensureLocalCalendarsExist()
 
         setupNavigation()
         setupDrawer()

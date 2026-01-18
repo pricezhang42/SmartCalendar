@@ -31,7 +31,9 @@ class CalendarRepository(private val context: Context) {
             CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
             CalendarContract.Calendars.CALENDAR_COLOR,
             CalendarContract.Calendars.VISIBLE,
-            CalendarContract.Calendars.IS_PRIMARY
+            CalendarContract.Calendars.IS_PRIMARY,
+            CalendarContract.Calendars.OWNER_ACCOUNT,
+            CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL
         )
         
         val cursor: Cursor? = contentResolver.query(
@@ -50,8 +52,10 @@ class CalendarRepository(private val context: Context) {
                 val color = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_COLOR))
                 val visible = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Calendars.VISIBLE)) == 1
                 val isPrimary = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Calendars.IS_PRIMARY)) == 1
+                val ownerAccount = it.getString(it.getColumnIndexOrThrow(CalendarContract.Calendars.OWNER_ACCOUNT)) ?: ""
+                val accessLevel = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL))
                 
-                calendars.add(CalendarAccount(id, accountName, displayName, color, visible, isPrimary))
+                calendars.add(CalendarAccount(id, accountName, displayName, color, visible, isPrimary, ownerAccount, accessLevel))
             }
         }
         
@@ -64,6 +68,72 @@ class CalendarRepository(private val context: Context) {
     fun getPrimaryCalendarId(): Long? {
         val calendars = getCalendars()
         return calendars.find { it.isPrimary }?.id ?: calendars.firstOrNull()?.id
+    }
+
+    /**
+     * Get writable calendars (calendars that can receive events)
+     */
+    fun getWritableCalendars(): List<CalendarAccount> {
+        return getCalendars().filter { it.isWritable() }
+    }
+
+    /**
+     * Ensure SmartCalendar local calendars exist (Personal and Work)
+     */
+    fun ensureLocalCalendarsExist() {
+        val calendars = getCalendars()
+        val localCalendars = calendars.filter { it.accountName == CalendarAccount.SMARTCALENDAR_ACCOUNT }
+        
+        // Create Personal calendar if not exists
+        if (localCalendars.none { it.displayName == "Personal" }) {
+            createLocalCalendar("Personal", android.graphics.Color.parseColor("#4285F4")) // Google Blue
+        }
+        
+        // Create Work calendar if not exists
+        if (localCalendars.none { it.displayName == "Work" }) {
+            createLocalCalendar("Work", android.graphics.Color.parseColor("#EA4335")) // Google Red
+        }
+    }
+
+    /**
+     * Create a local calendar owned by SmartCalendar
+     */
+    private fun createLocalCalendar(name: String, color: Int): Long {
+        val values = ContentValues().apply {
+            put(CalendarContract.Calendars.ACCOUNT_NAME, CalendarAccount.SMARTCALENDAR_ACCOUNT)
+            put(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
+            put(CalendarContract.Calendars.NAME, name)
+            put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, name)
+            put(CalendarContract.Calendars.CALENDAR_COLOR, color)
+            put(CalendarContract.Calendars.VISIBLE, 1)
+            put(CalendarContract.Calendars.SYNC_EVENTS, 1)
+            put(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, CalendarContract.Calendars.CAL_ACCESS_OWNER)
+            put(CalendarContract.Calendars.OWNER_ACCOUNT, CalendarAccount.SMARTCALENDAR_ACCOUNT)
+        }
+        
+        // Must use asSyncAdapter to create local calendars
+        val uri = CalendarContract.Calendars.CONTENT_URI.buildUpon()
+            .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+            .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, CalendarAccount.SMARTCALENDAR_ACCOUNT)
+            .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
+            .build()
+        
+        val calendarUri = contentResolver.insert(uri, values)
+        return calendarUri?.lastPathSegment?.toLongOrNull() ?: -1
+    }
+
+    /**
+     * Move an event to a different calendar
+     * @return true if successful
+     */
+    fun moveEvent(eventId: Long, targetCalendarId: Long): Boolean {
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.CALENDAR_ID, targetCalendarId)
+        }
+        
+        val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+        val rowsUpdated = contentResolver.update(uri, values, null, null)
+        return rowsUpdated > 0
     }
 
     /**

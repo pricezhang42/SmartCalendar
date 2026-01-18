@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.Event
 import com.example.smartcalendar.data.model.EventFormState
+import com.example.smartcalendar.data.model.CalendarAccount
 import com.example.smartcalendar.data.model.RecurrenceRule
 import com.example.smartcalendar.data.model.RepeatEndType
 import com.example.smartcalendar.data.repository.CalendarRepository
@@ -44,6 +45,11 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private var startTime = Calendar.getInstance()
     private var endTime = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, 1) }
     private val selectedDaysOfWeek = mutableSetOf<String>()
+    
+    // Calendar picker state
+    private var writableCalendars = listOf<CalendarAccount>()
+    private var selectedCalendarId: Long = 0
+    private var originalCalendarId: Long = 0
 
     private lateinit var repository: CalendarRepository
 
@@ -143,6 +149,9 @@ class EventModalFragment : BottomSheetDialogFragment() {
     }
 
     private fun setupViews() {
+        // Load writable calendars for picker
+        writableCalendars = repository.getWritableCalendars()
+        
         existingEvent?.let { event ->
             // Initialize form from event
             currentForm = EventFormState.fromEvent(event)
@@ -162,7 +171,17 @@ class EventModalFragment : BottomSheetDialogFragment() {
             
             // Show delete button for existing events
             binding.deleteButton.visibility = View.VISIBLE
+            
+            // Set calendar from existing event
+            selectedCalendarId = event.calendarId
+            originalCalendarId = event.calendarId
+        } ?: run {
+            // New event - default to first writable calendar
+            selectedCalendarId = writableCalendars.firstOrNull()?.id ?: repository.getPrimaryCalendarId() ?: 0
+            originalCalendarId = selectedCalendarId
         }
+        
+        updateCalendarUI()
 
         binding.allDaySwitch.isChecked = currentForm.isAllDay
         binding.repeatSwitch.isChecked = currentForm.repeatEnabled
@@ -170,6 +189,16 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
         // Setup day of week chips
         setupDayOfWeekChips()
+    }
+    
+    private fun updateCalendarUI() {
+        val calendar = writableCalendars.find { it.id == selectedCalendarId }
+        if (calendar != null) {
+            binding.calendarValue.text = calendar.displayName
+            binding.calendarColor.setBackgroundColor(calendar.color)
+        } else {
+            binding.calendarValue.text = "Select Calendar"
+        }
     }
 
     private fun setupDayOfWeekChips() {
@@ -181,9 +210,9 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 text = label
                 textSize = 14f
                 gravity = android.view.Gravity.CENTER
-                setPadding(0, 8, 0, 8)
-                layoutParams = android.widget.LinearLayout.LayoutParams(36, 36).apply {
-                    marginEnd = 8
+                val chipHeight = (40 * resources.displayMetrics.density).toInt()
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, chipHeight, 1f).apply {
+                    marginEnd = (4 * resources.displayMetrics.density).toInt()
                 }
                 isSelected = selectedDaysOfWeek.contains(code)
                 updateDayChipStyle(this)
@@ -216,6 +245,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
         binding.dateValue.setOnClickListener { showDatePicker() }
         binding.startTimeValue.setOnClickListener { showTimePicker(true) }
         binding.endTimeValue.setOnClickListener { showTimePicker(false) }
+        binding.calendarRow.setOnClickListener { showCalendarPicker() }
         
         binding.allDaySwitch.setOnCheckedChangeListener { _, isChecked ->
             currentForm = currentForm.copy(isAllDay = isChecked)
@@ -373,6 +403,26 @@ class EventModalFragment : BottomSheetDialogFragment() {
         ).show()
     }
 
+    private fun showCalendarPicker() {
+        if (writableCalendars.isEmpty()) {
+            android.widget.Toast.makeText(context, "No writable calendars available", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        val calendarNames = writableCalendars.map { "${it.displayName} (${it.accountName})" }.toTypedArray()
+        val currentIndex = writableCalendars.indexOfFirst { it.id == selectedCalendarId }.coerceAtLeast(0)
+        
+        AlertDialog.Builder(requireContext())
+            .setTitle("Select Calendar")
+            .setSingleChoiceItems(calendarNames, currentIndex) { dialog, which ->
+                selectedCalendarId = writableCalendars[which].id
+                updateCalendarUI()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun showReminderPicker() {
         val popup = PopupMenu(requireContext(), binding.reminderRow)
         popup.menu.add(0, 0, 0, getString(R.string.reminder_none))
@@ -428,16 +478,17 @@ class EventModalFragment : BottomSheetDialogFragment() {
             daysOfWeek = selectedDaysOfWeek.toSet()
         )
 
-        // Convert form to event
+        // Convert form to event with selected calendar
         val event = finalForm.toEvent(
             eventId = existingEvent?.id ?: 0,
-            calendarId = existingEvent?.calendarId ?: 0,
+            calendarId = selectedCalendarId,
             originalId = existingEvent?.originalId,
             originalInstanceTime = existingEvent?.originalInstanceTime
         )
 
         // Check if this is a recurring event being edited
         val isRecurringEvent = existingEvent?.rrule != null || existingEvent?.originalId != null
+        val calendarChanged = selectedCalendarId != originalCalendarId && existingEvent != null
         
         if (isRecurringEvent && existingEvent != null && originalForm != null) {
             // Special case: User turned OFF repeat for a recurring event
@@ -447,14 +498,45 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 return
             }
             
+            // If calendar changed for recurring event, force "All events" to move the entire series
+            if (calendarChanged) {
+                handleRecurringCalendarChange(event)
+                return
+            }
+            
             // Use form comparison to detect recurrence changes
             val recurrenceChanged = finalForm.hasRecurrenceChanged(originalForm!!)
             showRecurringEditDialog(event, recurrenceChanged)
+        } else if (calendarChanged && !isRecurringEvent) {
+            // For non-recurring events, move to new calendar
+            repository.moveEvent(event.id, selectedCalendarId)
+            onSaveListener?.invoke(event)
+            dismiss()
         } else {
             // Normal save for non-recurring events
             onSaveListener?.invoke(event)
             dismiss()
         }
+    }
+
+    /**
+     * Handle moving a recurring event to a different calendar.
+     * Only applies to "All events" - the entire series is moved.
+     */
+    private fun handleRecurringCalendarChange(event: Event) {
+        val masterEventId = existingEvent?.originalId ?: existingEvent?.id ?: return
+        
+        AlertDialog.Builder(requireContext())
+            .setTitle("Move Recurring Event")
+            .setMessage("Moving a recurring event to a different calendar will move all occurrences.")
+            .setPositiveButton("Move All") { _, _ ->
+                // Move the master event to new calendar
+                repository.moveEvent(masterEventId, selectedCalendarId)
+                onRecurringEditListener?.invoke(RecurringEditChoice.ALL_EVENTS, event, instanceStartTime)
+                dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     /**

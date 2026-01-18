@@ -35,6 +35,7 @@
     <string name="label_location">Location</string>
     <string name="hint_location">Add location…</string>
     <string name="label_reminder">Reminder</string>
+    <string name="label_calendar">Calendar</string>
     <string name="label_set_repeat">Set Repeat</string>
     <string name="cancel">Cancel</string>
     <string name="save">Save</string>
