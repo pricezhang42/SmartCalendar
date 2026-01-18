@@ -15,6 +15,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.Event
+import com.example.smartcalendar.data.model.EventFormState
 import com.example.smartcalendar.data.model.RecurrenceRule
 import com.example.smartcalendar.data.model.RepeatEndType
 import com.example.smartcalendar.data.repository.CalendarRepository
@@ -32,25 +33,17 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private val binding get() = _binding!!
 
     private var existingEvent: Event? = null
-    private var originalEvent: Event? = null  // Store original state to detect changes
-    private var instanceStartTime: Long? = null  // Original instance time for recurring events
+    private var instanceStartTime: Long? = null
+    
+    // Form state - all form data in one place
+    private var originalForm: EventFormState? = null
+    private var currentForm = EventFormState()
+    
+    // UI state helpers (not part of form data)
     private var selectedDate = Calendar.getInstance()
     private var startTime = Calendar.getInstance()
     private var endTime = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, 1) }
-    private var isAllDay = false
-    private var reminderMinutes: Int? = null
-    private var repeatEnabled = false
-    private var recurrenceRule = RecurrenceRule()
     private val selectedDaysOfWeek = mutableSetOf<String>()
-    private var repeatEndType = RepeatEndType.REPEAT_COUNT
-    private var occurrences = 10
-    
-    // Store original recurrence state for comparison
-    private var originalRepeatEnabled = false
-    private var originalRecurrenceRule: RecurrenceRule? = null
-    private var originalDaysOfWeek = setOf<String>()
-    private var originalRepeatEndType = RepeatEndType.REPEAT_COUNT
-    private var originalOccurrences = 10
 
     private lateinit var repository: CalendarRepository
 
@@ -135,8 +128,6 @@ class EventModalFragment : BottomSheetDialogFragment() {
                     originalInstanceTime = originalInstanceTime
                 )
                 
-                // Store original state for change detection
-                originalEvent = existingEvent
                 instanceStartTime = args.getLong(ARG_START_TIME)  // Store the instance time
             }
             if (args.containsKey(ARG_START_TIME)) {
@@ -153,36 +144,26 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
     private fun setupViews() {
         existingEvent?.let { event ->
-            binding.titleEditText.setText(event.title)
-            binding.descriptionEditText.setText(event.description)
-            binding.locationEditText.setText(event.location)
-            startTime.timeInMillis = event.startTime
-            endTime.timeInMillis = event.endTime
-            selectedDate.timeInMillis = event.startTime
-            isAllDay = event.isAllDay
+            // Initialize form from event
+            currentForm = EventFormState.fromEvent(event)
+            originalForm = currentForm.copy()
             
-            // Parse recurrence rule if present
-            event.rrule?.let { rrule ->
-                RecurrenceRule.fromRRule(rrule)?.let {
-                    repeatEnabled = true
-                    recurrenceRule = it
-                    selectedDaysOfWeek.clear()
-                    selectedDaysOfWeek.addAll(it.daysOfWeek)
-                    repeatEndType = it.endType
-                    it.count?.let { count -> occurrences = count }
-                }
-            }
+            // Populate UI fields
+            binding.titleEditText.setText(currentForm.title)
+            binding.descriptionEditText.setText(currentForm.description)
+            binding.locationEditText.setText(currentForm.location)
+            startTime.timeInMillis = currentForm.startTime
+            endTime.timeInMillis = currentForm.endTime
+            selectedDate.timeInMillis = currentForm.startTime
             
-            // Store original recurrence state for comparison at save time
-            originalRepeatEnabled = repeatEnabled
-            originalRecurrenceRule = if (repeatEnabled) recurrenceRule.copy() else null
-            originalDaysOfWeek = selectedDaysOfWeek.toSet()
-            originalRepeatEndType = repeatEndType
-            originalOccurrences = occurrences
+            // Sync day of week selection
+            selectedDaysOfWeek.clear()
+            selectedDaysOfWeek.addAll(currentForm.daysOfWeek)
         }
 
-        binding.allDaySwitch.isChecked = isAllDay
-        binding.repeatSwitch.isChecked = repeatEnabled
+        binding.allDaySwitch.isChecked = currentForm.isAllDay
+        binding.repeatSwitch.isChecked = currentForm.repeatEnabled
+        binding.repeatOptionsContainer.visibility = if (currentForm.repeatEnabled) View.VISIBLE else View.GONE
 
         // Setup day of week chips
         setupDayOfWeekChips()
@@ -234,12 +215,12 @@ class EventModalFragment : BottomSheetDialogFragment() {
         binding.endTimeValue.setOnClickListener { showTimePicker(false) }
         
         binding.allDaySwitch.setOnCheckedChangeListener { _, isChecked ->
-            isAllDay = isChecked
+            currentForm = currentForm.copy(isAllDay = isChecked)
             updateTimeVisibility()
         }
 
         binding.repeatSwitch.setOnCheckedChangeListener { _, isChecked ->
-            repeatEnabled = isChecked
+            currentForm = currentForm.copy(repeatEnabled = isChecked)
             binding.repeatOptionsContainer.visibility = if (isChecked) View.VISIBLE else View.GONE
         }
 
@@ -255,7 +236,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 R.id.chipYearly -> Event.FREQ_YEARLY
                 else -> Event.FREQ_WEEKLY
             }
-            recurrenceRule = recurrenceRule.copy(frequency = frequency)
+            currentForm = currentForm.copy(frequency = frequency)
             updateIntervalLabel()
             
             // Show/hide repeat on days (only for weekly)
@@ -264,15 +245,15 @@ class EventModalFragment : BottomSheetDialogFragment() {
         }
 
         binding.decreaseOccurrences.setOnClickListener {
-            if (occurrences > 1) {
-                occurrences--
-                binding.occurrencesValue.text = occurrences.toString()
+            if (currentForm.occurrences > 1) {
+                currentForm = currentForm.copy(occurrences = currentForm.occurrences - 1)
+                binding.occurrencesValue.text = currentForm.occurrences.toString()
             }
         }
 
         binding.increaseOccurrences.setOnClickListener {
-            occurrences++
-            binding.occurrencesValue.text = occurrences.toString()
+            currentForm = currentForm.copy(occurrences = currentForm.occurrences + 1)
+            binding.occurrencesValue.text = currentForm.occurrences.toString()
         }
 
         binding.cancelButton.setOnClickListener { dismiss() }
@@ -292,27 +273,31 @@ class EventModalFragment : BottomSheetDialogFragment() {
         updateIntervalLabel()
 
         // Set initial chip selection
-        when (recurrenceRule.frequency) {
+        when (currentForm.frequency) {
             Event.FREQ_DAILY -> binding.chipDaily.isChecked = true
             Event.FREQ_WEEKLY -> binding.chipWeekly.isChecked = true
             Event.FREQ_MONTHLY -> binding.chipMonthly.isChecked = true
             Event.FREQ_YEARLY -> binding.chipYearly.isChecked = true
         }
 
-        binding.intervalEditText.setText(recurrenceRule.interval.toString())
-        binding.occurrencesValue.text = occurrences.toString()
+        binding.intervalEditText.setText(currentForm.interval.toString())
+        binding.occurrencesValue.text = currentForm.occurrences.toString()
+        
+        // Show/hide repeat on days (only for weekly)
+        binding.repeatOnContainer.visibility = 
+            if (currentForm.frequency == Event.FREQ_WEEKLY) View.VISIBLE else View.GONE
         
         updateRepeatEndTypeUI()
     }
 
     private fun updateTimeVisibility() {
-        val visibility = if (isAllDay) View.GONE else View.VISIBLE
+        val visibility = if (currentForm.isAllDay) View.GONE else View.VISIBLE
         binding.startTimeRow.visibility = visibility
         binding.endTimeRow.visibility = visibility
     }
 
     private fun updateReminderText() {
-        binding.reminderValue.text = when (reminderMinutes) {
+        binding.reminderValue.text = when (currentForm.reminderMinutes) {
             null -> getString(R.string.reminder_none)
             5 -> getString(R.string.reminder_5min)
             10 -> getString(R.string.reminder_10min)
@@ -320,12 +305,12 @@ class EventModalFragment : BottomSheetDialogFragment() {
             30 -> getString(R.string.reminder_30min)
             60 -> getString(R.string.reminder_1hour)
             1440 -> getString(R.string.reminder_1day)
-            else -> "$reminderMinutes minutes before"
+            else -> "${currentForm.reminderMinutes} minutes before"
         }
     }
 
     private fun updateIntervalLabel() {
-        binding.intervalUnitLabel.text = when (recurrenceRule.frequency) {
+        binding.intervalUnitLabel.text = when (currentForm.frequency) {
             Event.FREQ_DAILY -> getString(R.string.unit_day)
             Event.FREQ_WEEKLY -> getString(R.string.unit_week)
             Event.FREQ_MONTHLY -> getString(R.string.unit_month)
@@ -335,13 +320,13 @@ class EventModalFragment : BottomSheetDialogFragment() {
     }
 
     private fun updateRepeatEndTypeUI() {
-        binding.repeatEndType.text = when (repeatEndType) {
+        binding.repeatEndType.text = when (currentForm.repeatEndType) {
             RepeatEndType.ENDLESSLY -> getString(R.string.repeat_endlessly)
             RepeatEndType.UNTIL_DATE -> getString(R.string.repeat_until_date)
             RepeatEndType.REPEAT_COUNT -> getString(R.string.repeat_count)
         }
         binding.occurrencesContainer.visibility = 
-            if (repeatEndType == RepeatEndType.REPEAT_COUNT) View.VISIBLE else View.GONE
+            if (currentForm.repeatEndType == RepeatEndType.REPEAT_COUNT) View.VISIBLE else View.GONE
     }
 
     private fun showDatePicker() {
@@ -395,7 +380,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
         popup.menu.add(0, 1440, 6, getString(R.string.reminder_1day))
 
         popup.setOnMenuItemClickListener { item ->
-            reminderMinutes = if (item.itemId == 0) null else item.itemId
+            currentForm = currentForm.copy(reminderMinutes = if (item.itemId == 0) null else item.itemId)
             updateReminderText()
             true
         }
@@ -409,11 +394,12 @@ class EventModalFragment : BottomSheetDialogFragment() {
         popup.menu.add(0, 2, 2, getString(R.string.repeat_count))
 
         popup.setOnMenuItemClickListener { item ->
-            repeatEndType = when (item.itemId) {
+            val newEndType = when (item.itemId) {
                 0 -> RepeatEndType.ENDLESSLY
                 1 -> RepeatEndType.UNTIL_DATE
                 else -> RepeatEndType.REPEAT_COUNT
             }
+            currentForm = currentForm.copy(repeatEndType = newEndType)
             updateRepeatEndTypeUI()
             true
         }
@@ -427,28 +413,21 @@ class EventModalFragment : BottomSheetDialogFragment() {
             return
         }
 
-        val rrule = if (repeatEnabled) {
-            val interval = binding.intervalEditText.text.toString().toIntOrNull() ?: 1
-            RecurrenceRule(
-                frequency = recurrenceRule.frequency,
-                interval = interval,
-                daysOfWeek = if (recurrenceRule.frequency == Event.FREQ_WEEKLY) selectedDaysOfWeek else emptySet(),
-                endType = repeatEndType,
-                count = if (repeatEndType == RepeatEndType.REPEAT_COUNT) occurrences else null
-            ).toRRule()
-        } else null
-
-        val event = Event(
-            id = existingEvent?.id ?: 0,
-            calendarId = existingEvent?.calendarId ?: 0,
+        // Build final form state from UI
+        val finalForm = currentForm.copy(
             title = title,
             description = binding.descriptionEditText.text.toString().trim(),
             location = binding.locationEditText.text.toString().trim(),
             startTime = startTime.timeInMillis,
             endTime = endTime.timeInMillis,
-            isAllDay = isAllDay,
-            reminderMinutes = reminderMinutes,
-            rrule = rrule,
+            interval = binding.intervalEditText.text.toString().toIntOrNull() ?: 1,
+            daysOfWeek = selectedDaysOfWeek.toSet()
+        )
+
+        // Convert form to event
+        val event = finalForm.toEvent(
+            eventId = existingEvent?.id ?: 0,
+            calendarId = existingEvent?.calendarId ?: 0,
             originalId = existingEvent?.originalId,
             originalInstanceTime = existingEvent?.originalInstanceTime
         )
@@ -456,9 +435,16 @@ class EventModalFragment : BottomSheetDialogFragment() {
         // Check if this is a recurring event being edited
         val isRecurringEvent = existingEvent?.rrule != null || existingEvent?.originalId != null
         
-        if (isRecurringEvent && existingEvent != null) {
-            // Compare current recurrence settings with original
-            val recurrenceChanged = hasRecurrenceSettingsChanged()
+        if (isRecurringEvent && existingEvent != null && originalForm != null) {
+            // Special case: User turned OFF repeat for a recurring event
+            // This automatically ends the series and creates a normal event
+            if (originalForm!!.repeatEnabled && !finalForm.repeatEnabled) {
+                handleRepeatTurnedOff(event)
+                return
+            }
+            
+            // Use form comparison to detect recurrence changes
+            val recurrenceChanged = finalForm.hasRecurrenceChanged(originalForm!!)
             showRecurringEditDialog(event, recurrenceChanged)
         } else {
             // Normal save for non-recurring events
@@ -468,32 +454,27 @@ class EventModalFragment : BottomSheetDialogFragment() {
     }
 
     /**
-     * Compare current recurrence settings with original to detect changes
+     * Handle the special case where user turns off repeat for a recurring event.
+     * - If first occurrence (no originalId): Convert the master event to non-recurring
+     * - If later occurrence: End the series and create a new non-recurring event
      */
-    private fun hasRecurrenceSettingsChanged(): Boolean {
-        // If repeat was toggled on/off
-        if (repeatEnabled != originalRepeatEnabled) return true
+    private fun handleRepeatTurnedOff(event: Event) {
+        val instanceTime = instanceStartTime ?: return
         
-        // If repeat is off, no recurrence settings to compare
-        if (!repeatEnabled) return false
-        
-        // Compare frequency
-        if (recurrenceRule.frequency != originalRecurrenceRule?.frequency) return true
-        
-        // Compare interval
-        val currentInterval = binding.intervalEditText.text.toString().toIntOrNull() ?: 1
-        if (currentInterval != (originalRecurrenceRule?.interval ?: 1)) return true
-        
-        // Compare days of week (for weekly)
-        if (selectedDaysOfWeek != originalDaysOfWeek) return true
-        
-        // Compare repeat end type
-        if (repeatEndType != originalRepeatEndType) return true
-        
-        // Compare occurrences (when using count)
-        if (repeatEndType == RepeatEndType.REPEAT_COUNT && occurrences != originalOccurrences) return true
-        
-        return false
+        // If no originalId, this is the master event itself (first occurrence)
+        if (existingEvent?.originalId == null) {
+            val masterEventId = existingEvent?.id ?: return
+            // First occurrence: Just update the master event to remove recurrence
+            val updatedEvent = event.copy(id = masterEventId)
+            repository.updateEvent(updatedEvent)
+            onRecurringEditListener?.invoke(RecurringEditChoice.ALL_EVENTS, updatedEvent, instanceTime)
+        } else {
+            // Later occurrence: End the original series and create new non-recurring event
+            val masterEventId = existingEvent?.originalId ?: return
+            repository.splitRecurringSeries(masterEventId, instanceTime, event)
+            onRecurringEditListener?.invoke(RecurringEditChoice.THIS_AND_FOLLOWING, event, instanceTime)
+        }
+        dismiss()
     }
 
     private fun showRecurringEditDialog(event: Event, rruleChanged: Boolean) {
@@ -562,7 +543,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
     private fun getChangedFields(newEvent: Event): ContentValues {
         val values = ContentValues()
-        val original = originalEvent ?: return values
+        val original = originalForm ?: return values
 
         if (newEvent.title != original.title) {
             values.put(CalendarContract.Events.TITLE, newEvent.title)
@@ -576,7 +557,9 @@ class EventModalFragment : BottomSheetDialogFragment() {
         if (newEvent.isAllDay != original.isAllDay) {
             values.put(CalendarContract.Events.ALL_DAY, if (newEvent.isAllDay) 1 else 0)
         }
-        if (newEvent.rrule != original.rrule) {
+        // Compare rrule by checking if recurrence settings changed
+        val originalEventFromForm = original.toEvent()
+        if (newEvent.rrule != originalEventFromForm.rrule) {
             if (newEvent.rrule != null) {
                 values.put(CalendarContract.Events.RRULE, newEvent.rrule)
             } else {
