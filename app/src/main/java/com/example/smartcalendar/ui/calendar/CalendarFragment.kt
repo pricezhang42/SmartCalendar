@@ -1,7 +1,5 @@
 package com.example.smartcalendar.ui.calendar
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
@@ -12,15 +10,14 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.example.smartcalendar.R
-import com.example.smartcalendar.data.model.Event
-import com.example.smartcalendar.data.repository.CalendarRepository
+import com.example.smartcalendar.data.model.EventInstance
+import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentCalendarBinding
 import com.example.smartcalendar.databinding.ItemCalendarDayBinding
 import java.text.SimpleDateFormat
@@ -34,9 +31,8 @@ class CalendarFragment : Fragment() {
     private var _binding: FragmentCalendarBinding? = null
     private val binding get() = _binding!!
 
-    private lateinit var repository: CalendarRepository
+    private lateinit var repository: LocalCalendarRepository
     private var currentCalendar = Calendar.getInstance()
-    private var selectedCalendarIds: Set<Long> = emptySet()
 
     // ViewPager position constants - 500 is "center" position representing current month/week
     private val centerPosition = 500
@@ -49,15 +45,7 @@ class CalendarFragment : Fragment() {
         }
 
     private var onTitleChangeListener: ((String) -> Unit)? = null
-
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val allGranted = permissions.entries.all { it.value }
-        if (allGranted) {
-            loadCalendarData()
-        }
-    }
+    private var eventClickListener: OnEventClickListener? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -69,38 +57,16 @@ class CalendarFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        repository = CalendarRepository(requireContext())
+        repository = LocalCalendarRepository.getInstance()
+        eventClickListener = activity as? OnEventClickListener
         
         setupWeekdayHeaders()
         setupMonthViewPager()
         setupWeekViewPager()
-        checkPermissionsAndLoadData()
-    }
-
-    private fun checkPermissionsAndLoadData() {
-        val readPermission = ContextCompat.checkSelfPermission(
-            requireContext(), Manifest.permission.READ_CALENDAR
-        )
-        val writePermission = ContextCompat.checkSelfPermission(
-            requireContext(), Manifest.permission.WRITE_CALENDAR
-        )
-
-        if (readPermission == PackageManager.PERMISSION_GRANTED &&
-            writePermission == PackageManager.PERMISSION_GRANTED) {
-            loadCalendarData()
-        } else {
-            requestPermissionLauncher.launch(arrayOf(
-                Manifest.permission.READ_CALENDAR,
-                Manifest.permission.WRITE_CALENDAR
-            ))
-        }
+        loadCalendarData()
     }
 
     fun loadCalendarData() {
-        if (selectedCalendarIds.isEmpty()) {
-            selectedCalendarIds = repository.getCalendars().map { it.id }.toSet()
-        }
-        
         // Refresh all pages to ensure data consistency after CRUD operations
         binding.monthViewPager.adapter?.notifyDataSetChanged()
         binding.weekViewPager.adapter?.notifyDataSetChanged()
@@ -285,10 +251,7 @@ class CalendarFragment : Fragment() {
         updateTitle()
     }
 
-    fun setSelectedCalendars(ids: Set<Long>) {
-        selectedCalendarIds = ids
-        loadCalendarData()
-    }
+
 
     fun getTitle(): String {
         val format = SimpleDateFormat("MMM yyyy", Locale.getDefault())
@@ -303,7 +266,7 @@ class CalendarFragment : Fragment() {
     }
 
     interface OnEventClickListener {
-        fun onEventClick(event: Event)
+        fun onEventClick(instance: EventInstance)
     }
 
     // Month Pager Adapter
@@ -338,8 +301,8 @@ class CalendarFragment : Fragment() {
                 val parentHeight = holder.recyclerView.height
                 val numRows = (days.size + 6) / 7 // Ceiling division
                 
-                holder.recyclerView.adapter = MonthGridAdapter(days, events, parentHeight, numRows) { event ->
-                    (activity as? OnEventClickListener)?.onEventClick(event)
+                holder.recyclerView.adapter = MonthGridAdapter(days, events, parentHeight, numRows) { instance ->
+                    eventClickListener?.onEventClick(instance)
                 }
             }
         }
@@ -384,7 +347,7 @@ class CalendarFragment : Fragment() {
             return days
         }
 
-        private fun getEventsForMonth(calendar: Calendar): List<Event> {
+        private fun getEventsForMonth(calendar: Calendar): List<EventInstance> {
             val start = calendar.clone() as Calendar
             start.set(Calendar.DAY_OF_MONTH, 1)
             start.add(Calendar.DAY_OF_MONTH, -7)
@@ -397,9 +360,7 @@ class CalendarFragment : Fragment() {
             end.set(Calendar.HOUR_OF_DAY, 23)
             end.set(Calendar.MINUTE, 59)
 
-            val events_ = repository.getEvents(start.timeInMillis, end.timeInMillis, selectedCalendarIds)
-            val events = repository.getEventInstances(start.timeInMillis, end.timeInMillis, selectedCalendarIds)
-            return events
+            return repository.getInstances(start.timeInMillis, end.timeInMillis)
         }
     }
 
@@ -437,7 +398,7 @@ class CalendarFragment : Fragment() {
             val weekStart = getWeekStart(calendar)
             val weekEnd = getWeekEnd(calendar)
             
-            val events = repository.getEventInstances(weekStart.timeInMillis, weekEnd.timeInMillis, selectedCalendarIds)
+            val events = repository.getInstances(weekStart.timeInMillis, weekEnd.timeInMillis)
             val cal = weekStart.clone() as Calendar
 
             for (dayIndex in 0..6) {
@@ -519,7 +480,7 @@ class CalendarFragment : Fragment() {
          * Calculate layout positions for overlapping events.
          * Returns a list of EventLayout with column position and total columns for each event.
          */
-        private fun calculateEventLayouts(events: List<Event>): List<EventLayout> {
+        private fun calculateEventLayouts(events: List<EventInstance>): List<EventLayout> {
             if (events.isEmpty()) return emptyList()
             
             val layouts = mutableListOf<EventLayout>()
@@ -553,7 +514,7 @@ class CalendarFragment : Fragment() {
             return layouts
         }
 
-        private fun createEventView(event: Event, hourHeight: Int, column: Int, totalColumns: Int): View {
+        private fun createEventView(event: EventInstance, hourHeight: Int, column: Int, totalColumns: Int): View {
             val eventCal = Calendar.getInstance()
             eventCal.timeInMillis = event.startTime
             val startHour = eventCal.get(Calendar.HOUR_OF_DAY)
@@ -589,8 +550,6 @@ class CalendarFragment : Fragment() {
                     
                     // If there are multiple columns, divide the width
                     if (totalColumns > 1) {
-                        // Use weight-like calculation: each event gets 1/totalColumns of the width
-                        // Position is based on column index
                         width = 0 // Will be set programmatically
                     }
                 }
@@ -615,7 +574,7 @@ class CalendarFragment : Fragment() {
                 }
                 
                 setOnClickListener {
-                    (activity as? OnEventClickListener)?.onEventClick(event)
+                    eventClickListener?.onEventClick(event)
                 }
             }
         }
@@ -634,7 +593,7 @@ data class DayItem(
  * Helper class for event layout calculation in week view
  */
 data class EventLayout(
-    val event: Event,
+    val event: EventInstance,
     val column: Int,
     var totalColumns: Int
 )
@@ -644,10 +603,10 @@ data class EventLayout(
  */
 class MonthGridAdapter(
     private val days: List<DayItem>,
-    private val events: List<Event>,
+    private val events: List<EventInstance>,
     private val parentHeight: Int,
     private val numRows: Int,
-    private val onEventClick: (Event) -> Unit
+    private val onEventClick: (EventInstance) -> Unit
 ) : RecyclerView.Adapter<MonthGridAdapter.DayViewHolder>() {
 
     private val rowHeight: Int = if (numRows > 0 && parentHeight > 0) parentHeight / numRows else 0
@@ -680,7 +639,6 @@ class MonthGridAdapter(
                 holder.dayNumber.setTextColor(Color.WHITE)
             }
             !day.isCurrentMonth -> {
-                // Use 0 or null to remove the background resource entirely
                 holder.dayNumber.background = null
                 holder.dayNumber.setTextColor(Color.LTGRAY)
             }
@@ -716,7 +674,6 @@ class MonthGridAdapter(
             if (event.color != 0) {
                 chip.background.setTint(event.color)
             }
-            // Make event chips clickable for editing
             chip.setOnClickListener {
                 onEventClick(event)
             }

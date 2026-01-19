@@ -1,23 +1,23 @@
 package com.example.smartcalendar
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.view.View
-import android.widget.CheckBox
 import android.widget.LinearLayout
-import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
-import androidx.drawerlayout.widget.DrawerLayout
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
-import com.example.smartcalendar.data.model.CalendarAccount
-import com.example.smartcalendar.data.model.Event
-import com.example.smartcalendar.data.repository.CalendarRepository
+import com.example.smartcalendar.data.model.EventInstance
+import com.example.smartcalendar.data.model.ICalEvent
+import com.example.smartcalendar.data.repository.LocalCalendarRepository
+import com.example.smartcalendar.data.sync.CalendarExporter
+import com.example.smartcalendar.data.sync.CalendarImporter
 import com.example.smartcalendar.databinding.ActivityMainBinding
 import com.example.smartcalendar.ui.calendar.CalendarFragment
 import com.example.smartcalendar.ui.event.EventModalFragment
@@ -26,17 +26,16 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var navController: NavController
-    private lateinit var repository: CalendarRepository
-    
-    private val calendarAccounts = mutableListOf<CalendarAccount>()
-    private val selectedCalendarIds = mutableSetOf<Long>()
+    private lateinit var localRepository: LocalCalendarRepository
+    private lateinit var importer: CalendarImporter
+    private lateinit var exporter: CalendarExporter
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.entries.all { it.value }
         if (allGranted) {
-            loadCalendars()
+            // Permissions granted - ready for import/export
         }
     }
 
@@ -50,15 +49,14 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         supportActionBar?.setDisplayShowTitleEnabled(true)
         supportActionBar?.title = getString(R.string.view_month)
 
-        repository = CalendarRepository(this)
-        
-        // Create SmartCalendar local calendars if they don't exist
-        repository.ensureLocalCalendarsExist()
+        localRepository = LocalCalendarRepository.getInstance()
+        importer = CalendarImporter(this)
+        exporter = CalendarExporter(this)
 
         setupNavigation()
         setupDrawer()
         setupFab()
-        checkPermissionsAndLoad()
+        checkPermissions()
     }
 
     private fun setupNavigation() {
@@ -66,16 +64,13 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
             .findFragmentById(R.id.nav_host_fragment_content_main) as NavHostFragment
         navController = navHostFragment.navController
 
-        // Setup bottom navigation
         binding.bottomNav.setupWithNavController(navController)
 
-        // Update toolbar title based on destination
         navController.addOnDestinationChangedListener { _, destination, _ ->
             when (destination.id) {
                 R.id.CalendarFragment -> {
                     val fragment = getCurrentCalendarFragment()
                     supportActionBar?.title = fragment?.getTitle() ?: getString(R.string.view_month)
-                    // Register for title changes when swiping
                     fragment?.setOnTitleChangeListener { title ->
                         supportActionBar?.title = title
                     }
@@ -88,12 +83,11 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
     }
 
     private fun setupDrawer() {
-        // Toolbar navigation icon opens drawer
         binding.toolbar.setNavigationOnClickListener {
             binding.drawerLayout.openDrawer(GravityCompat.START)
         }
 
-        // View mode options
+        // Week view option
         binding.navView.findViewById<LinearLayout>(R.id.weekOption)?.setOnClickListener {
             getCurrentCalendarFragment()?.let { fragment ->
                 fragment.viewMode = CalendarFragment.ViewMode.WEEK
@@ -103,6 +97,7 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
             updateViewModeSelection(isMonth = false)
         }
 
+        // Month view option
         binding.navView.findViewById<LinearLayout>(R.id.monthOption)?.setOnClickListener {
             getCurrentCalendarFragment()?.let { fragment ->
                 fragment.viewMode = CalendarFragment.ViewMode.MONTH
@@ -112,17 +107,14 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
             updateViewModeSelection(isMonth = true)
         }
 
-        // Show All button
-        binding.navView.findViewById<View>(R.id.showAllButton)?.setOnClickListener {
-            selectedCalendarIds.clear()
-            selectedCalendarIds.addAll(calendarAccounts.map { it.id })
-            updateCalendarCheckboxes()
-            getCurrentCalendarFragment()?.setSelectedCalendars(selectedCalendarIds)
+        // Import button
+        binding.navView.findViewById<android.view.View>(R.id.importButton)?.setOnClickListener {
+            showImportDialog()
         }
 
-        // Refresh button
-        binding.navView.findViewById<View>(R.id.refreshButton)?.setOnClickListener {
-            loadCalendars()
+        // Export button
+        binding.navView.findViewById<android.view.View>(R.id.exportButton)?.setOnClickListener {
+            showExportDialog()
         }
     }
 
@@ -147,18 +139,12 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         }
     }
 
-    private fun checkPermissionsAndLoad() {
-        val readPermission = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.READ_CALENDAR
-        )
-        val writePermission = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.WRITE_CALENDAR
-        )
+    private fun checkPermissions() {
+        val readPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR)
+        val writePermission = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR)
 
-        if (readPermission == PackageManager.PERMISSION_GRANTED &&
-            writePermission == PackageManager.PERMISSION_GRANTED) {
-            loadCalendars()
-        } else {
+        if (readPermission != PackageManager.PERMISSION_GRANTED ||
+            writePermission != PackageManager.PERMISSION_GRANTED) {
             requestPermissionLauncher.launch(arrayOf(
                 Manifest.permission.READ_CALENDAR,
                 Manifest.permission.WRITE_CALENDAR
@@ -166,82 +152,52 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         }
     }
 
-    private fun loadCalendars() {
-        calendarAccounts.clear()
-        calendarAccounts.addAll(repository.getCalendars())
+    private fun showImportDialog() {
+        val calendars = importer.getImportableCalendars()
+        if (calendars.isEmpty()) {
+            Toast.makeText(this, "No calendars available for import", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val names = calendars.map { "${it.name} (${it.accountName})" }.toTypedArray()
         
-        // Select all by default
-        if (selectedCalendarIds.isEmpty()) {
-            selectedCalendarIds.addAll(calendarAccounts.map { it.id })
-        }
-
-        populateCalendarList()
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.select_calendar))
+            .setItems(names) { _, which ->
+                val selected = calendars[which]
+                val count = importer.importFromCalendar(selected.id)
+                Toast.makeText(this, getString(R.string.import_success, count), Toast.LENGTH_SHORT).show()
+                binding.drawerLayout.closeDrawer(GravityCompat.START)
+                refreshCalendar()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
-    private fun populateCalendarList() {
-        val container = binding.navView.findViewById<LinearLayout>(R.id.calendarListContainer)
-        container?.removeAllViews()
-
-        calendarAccounts.forEach { account ->
-            val itemView = layoutInflater.inflate(android.R.layout.simple_list_item_multiple_choice, container, false)
-            
-            // Create custom layout for calendar item
-            val calendarItem = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, 12, 0, 12)
-                gravity = android.view.Gravity.CENTER_VERTICAL
-            }
-
-            val checkBox = CheckBox(this).apply {
-                isChecked = selectedCalendarIds.contains(account.id)
-                setOnCheckedChangeListener { _, isChecked ->
-                    if (isChecked) {
-                        selectedCalendarIds.add(account.id)
-                    } else {
-                        selectedCalendarIds.remove(account.id)
-                    }
-                    getCurrentCalendarFragment()?.setSelectedCalendars(selectedCalendarIds)
-                }
-            }
-
-            val textContainer = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                setPadding(12, 0, 0, 0)
-            }
-
-            val nameText = TextView(this).apply {
-                text = account.displayName
-                textSize = 14f
-                setTextColor(android.graphics.Color.BLACK)
-            }
-
-            val emailText = TextView(this).apply {
-                text = account.accountName
-                textSize = 12f
-                setTextColor(android.graphics.Color.GRAY)
-            }
-
-            textContainer.addView(nameText)
-            textContainer.addView(emailText)
-
-            calendarItem.addView(checkBox)
-            calendarItem.addView(textContainer)
-
-            container?.addView(calendarItem)
+    private fun showExportDialog() {
+        if (localRepository.getEventCount() == 0) {
+            Toast.makeText(this, "No events to export", Toast.LENGTH_SHORT).show()
+            return
         }
-    }
 
-    private fun updateCalendarCheckboxes() {
-        val container = binding.navView.findViewById<LinearLayout>(R.id.calendarListContainer)
-        for (i in 0 until (container?.childCount ?: 0)) {
-            val child = container?.getChildAt(i) as? LinearLayout
-            val checkBox = child?.getChildAt(0) as? CheckBox
-            val account = calendarAccounts.getOrNull(i)
-            if (checkBox != null && account != null) {
-                checkBox.isChecked = selectedCalendarIds.contains(account.id)
-            }
+        val calendars = exporter.getExportableCalendars()
+        if (calendars.isEmpty()) {
+            Toast.makeText(this, "No writable calendars available", Toast.LENGTH_SHORT).show()
+            return
         }
+
+        val names = calendars.map { "${it.name} (${it.accountName})" }.toTypedArray()
+        
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.select_calendar))
+            .setItems(names) { _, which ->
+                val selected = calendars[which]
+                val count = exporter.exportToCalendar(selected.id)
+                Toast.makeText(this, getString(R.string.export_success, count), Toast.LENGTH_SHORT).show()
+                binding.drawerLayout.closeDrawer(GravityCompat.START)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun getCurrentCalendarFragment(): CalendarFragment? {
@@ -250,43 +206,43 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         return navHostFragment?.childFragmentManager?.fragments?.firstOrNull() as? CalendarFragment
     }
 
-    private fun showEventModal(event: Event?, initialTime: Long) {
-        val modal = EventModalFragment.newInstance(event, initialTime)
+    private fun showEventModal(instance: EventInstance?, initialTime: Long) {
+        val event = instance?.let { localRepository.getEvent(it.eventUid) }
+        val modal = EventModalFragment.newInstance(event, instance, initialTime)
+        
         modal.onSaveListener = { savedEvent ->
-            saveEvent(savedEvent)
+            if (localRepository.getEvent(savedEvent.uid) != null) {
+                localRepository.updateEvent(savedEvent)
+            } else {
+                localRepository.addEvent(savedEvent)
+            }
+            refreshCalendar()
         }
-        modal.onRecurringEditListener = { choice, updatedEvent, instanceTime ->
-            // Refresh calendar view after recurring event edit with delay
-            refreshCalendarWithDelay()
+        
+        modal.onDeleteListener = { eventUid ->
+            localRepository.deleteEvent(eventUid)
+            refreshCalendar()
         }
-        modal.onDeleteListener = { eventId ->
-            // Refresh calendar view after delete with delay
-            refreshCalendarWithDelay()
+        
+        modal.onDeleteInstanceListener = { eventUid, instanceTime ->
+            localRepository.addExceptionDate(eventUid, instanceTime)
+            refreshCalendar()
         }
+        
+        modal.onDeleteFromInstanceListener = { eventUid, instanceTime ->
+            localRepository.endRecurrenceAtInstance(eventUid, instanceTime)
+            refreshCalendar()
+        }
+        
         modal.show(supportFragmentManager, "EventModal")
     }
 
-    private fun saveEvent(event: Event) {
-        if (event.id > 0) {
-            repository.updateEvent(event)
-        } else {
-            repository.insertEvent(event)
-        }
-        // Refresh calendar view with delay
-        refreshCalendarWithDelay()
+    private fun refreshCalendar() {
+        getCurrentCalendarFragment()?.loadCalendarData()
     }
 
-    /**
-     * Refresh calendar data with a small delay to allow Calendar Provider to process changes
-     */
-    private fun refreshCalendarWithDelay() {
-        binding.root.postDelayed({
-            getCurrentCalendarFragment()?.loadCalendarData()
-        }, 300) // 300ms delay for Calendar Provider to sync
-    }
-
-    override fun onEventClick(event: Event) {
-        showEventModal(event, event.startTime)
+    override fun onEventClick(instance: EventInstance) {
+        showEventModal(instance, instance.startTime)
     }
 
     override fun onBackPressed() {
