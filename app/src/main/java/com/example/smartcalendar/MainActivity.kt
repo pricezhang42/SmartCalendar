@@ -49,6 +49,8 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         supportActionBar?.setDisplayShowTitleEnabled(true)
         supportActionBar?.title = getString(R.string.view_month)
 
+        // Initialize repository with context for persistence
+        LocalCalendarRepository.init(this)
         localRepository = LocalCalendarRepository.getInstance()
         importer = CalendarImporter(this)
         exporter = CalendarExporter(this)

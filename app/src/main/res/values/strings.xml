@@ -96,4 +96,8 @@
     <string name="select_calendar">Select Calendar</string>
     <string name="import_success">Imported %d events</string>
     <string name="export_success">Exported %d events</string>
+    
+    <!-- Repeat End Options -->
+    <string name="repeat_never">Never</string>
+    <string name="repeat_until">On date…</string>
 </resources>

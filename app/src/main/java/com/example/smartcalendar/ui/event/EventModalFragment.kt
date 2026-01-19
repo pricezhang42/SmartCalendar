@@ -35,9 +35,14 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private val selectedDaysOfWeek = mutableSetOf<String>()
     private var isAllDay = false
     private var repeatEnabled = false
-    private var repeatFrequency = "DAILY"
+    private var repeatFrequency = "WEEKLY"
     private var repeatInterval = 1
     private var reminderMinutes: Int? = null
+    
+    // Repeat end options
+    private var repeatEndType = "NEVER" // NEVER, COUNT, UNTIL
+    private var repeatCount = 10
+    private var repeatUntil: Calendar? = null
 
     var onSaveListener: ((ICalEvent) -> Unit)? = null
     var onDeleteListener: ((String) -> Unit)? = null
@@ -80,9 +85,19 @@ class EventModalFragment : BottomSheetDialogFragment() {
             binding.titleEditText.setText(event.summary)
             binding.descriptionEditText.setText(event.description)
             binding.locationEditText.setText(event.location)
-            startTime.timeInMillis = event.dtStart
-            endTime.timeInMillis = event.dtEnd
-            selectedDate.timeInMillis = event.dtStart
+            
+            // For recurring events, use the instance time, not master event time
+            if (event.isRecurring && instanceStartTime != null) {
+                val duration = event.getDurationMs()
+                startTime.timeInMillis = instanceStartTime!!
+                endTime.timeInMillis = instanceStartTime!! + duration
+                selectedDate.timeInMillis = instanceStartTime!!
+            } else {
+                startTime.timeInMillis = event.dtStart
+                endTime.timeInMillis = event.dtEnd
+                selectedDate.timeInMillis = event.dtStart
+            }
+            
             isAllDay = event.allDay
             repeatEnabled = event.isRecurring
             
@@ -107,7 +122,23 @@ class EventModalFragment : BottomSheetDialogFragment() {
         binding.repeatSwitch.isChecked = repeatEnabled
         binding.repeatOptionsContainer.visibility = if (repeatEnabled) View.VISIBLE else View.GONE
 
+        // Auto-select current day of week for new events
+        if (selectedDaysOfWeek.isEmpty()) {
+            val dayCode = when (startTime.get(Calendar.DAY_OF_WEEK)) {
+                Calendar.SUNDAY -> "SU"
+                Calendar.MONDAY -> "MO"
+                Calendar.TUESDAY -> "TU"
+                Calendar.WEDNESDAY -> "WE"
+                Calendar.THURSDAY -> "TH"
+                Calendar.FRIDAY -> "FR"
+                Calendar.SATURDAY -> "SA"
+                else -> "SU"
+            }
+            selectedDaysOfWeek.add(dayCode)
+        }
+
         setupDayOfWeekChips()
+        updateRepeatEndUI()
     }
 
     private fun parseRRule(rrule: String) {
@@ -117,12 +148,31 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 when (parts[0]) {
                     "FREQ" -> repeatFrequency = parts[1]
                     "INTERVAL" -> repeatInterval = parts[1].toIntOrNull() ?: 1
+                    "COUNT" -> {
+                        repeatEndType = "COUNT"
+                        repeatCount = parts[1].toIntOrNull() ?: 10
+                    }
+                    "UNTIL" -> {
+                        repeatEndType = "UNTIL"
+                        repeatUntil = parseUntilDate(parts[1])
+                    }
                     "BYDAY" -> {
                         selectedDaysOfWeek.clear()
                         selectedDaysOfWeek.addAll(parts[1].split(","))
                     }
                 }
             }
+        }
+    }
+    
+    private fun parseUntilDate(dateStr: String): Calendar? {
+        return try {
+            val format = java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", java.util.Locale.US)
+            format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            val date = format.parse(dateStr)
+            Calendar.getInstance().apply { time = date }
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -189,9 +239,67 @@ class EventModalFragment : BottomSheetDialogFragment() {
         binding.chipMonthly.setOnClickListener { setRepeatFrequency("MONTHLY") }
         binding.chipYearly.setOnClickListener { setRepeatFrequency("YEARLY") }
 
+        // Repeat ends
+        binding.repeatEndType.setOnClickListener { showRepeatEndPicker() }
+        binding.occurrencesEditText.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                repeatCount = s.toString().toIntOrNull() ?: 1
+            }
+        })
+
         binding.cancelButton.setOnClickListener { dismiss() }
         binding.saveButton.setOnClickListener { saveEvent() }
         binding.deleteButton.setOnClickListener { deleteEvent() }
+    }
+    
+    private fun showRepeatEndPicker() {
+        val popup = PopupMenu(requireContext(), binding.repeatEndType)
+        popup.menu.add(0, 0, 0, getString(R.string.repeat_never))
+        popup.menu.add(0, 1, 1, getString(R.string.repeat_count))
+        popup.menu.add(0, 2, 2, getString(R.string.repeat_until))
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                0 -> repeatEndType = "NEVER"
+                1 -> repeatEndType = "COUNT"
+                2 -> {
+                    repeatEndType = "UNTIL"
+                    showRepeatUntilDatePicker()
+                }
+            }
+            updateRepeatEndUI()
+            true
+        }
+        popup.show()
+    }
+    
+    private fun showRepeatUntilDatePicker() {
+        val cal = repeatUntil ?: Calendar.getInstance().apply { add(Calendar.MONTH, 1) }
+        DatePickerDialog(requireContext(), { _, year, month, day ->
+            repeatUntil = Calendar.getInstance().apply { set(year, month, day) }
+            updateRepeatEndUI()
+        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+    }
+    
+    private fun updateRepeatEndUI() {
+        when (repeatEndType) {
+            "NEVER" -> {
+                binding.repeatEndType.text = getString(R.string.repeat_never)
+                binding.occurrencesContainer.visibility = View.GONE
+            }
+            "COUNT" -> {
+                binding.repeatEndType.text = getString(R.string.repeat_count)
+                binding.occurrencesContainer.visibility = View.VISIBLE
+                binding.occurrencesEditText.setText(repeatCount.toString())
+            }
+            "UNTIL" -> {
+                val format = SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
+                val dateStr = repeatUntil?.let { format.format(it.time) } ?: getString(R.string.repeat_until)
+                binding.repeatEndType.text = dateStr
+                binding.occurrencesContainer.visibility = View.GONE
+            }
+        }
     }
 
     private fun setRepeatFrequency(freq: String) {
@@ -249,8 +357,25 @@ class EventModalFragment : BottomSheetDialogFragment() {
             endTime.set(Calendar.YEAR, year)
             endTime.set(Calendar.MONTH, month)
             endTime.set(Calendar.DAY_OF_MONTH, day)
+            updateWeekdayForStartTime()
             updateUI()
         }, selectedDate.get(Calendar.YEAR), selectedDate.get(Calendar.MONTH), selectedDate.get(Calendar.DAY_OF_MONTH)).show()
+    }
+    
+    private fun updateWeekdayForStartTime() {
+        val dayCode = when (startTime.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.SUNDAY -> "SU"
+            Calendar.MONDAY -> "MO"
+            Calendar.TUESDAY -> "TU"
+            Calendar.WEDNESDAY -> "WE"
+            Calendar.THURSDAY -> "TH"
+            Calendar.FRIDAY -> "FR"
+            Calendar.SATURDAY -> "SA"
+            else -> "SU"
+        }
+        selectedDaysOfWeek.clear()
+        selectedDaysOfWeek.add(dayCode)
+        setupDayOfWeekChips()
     }
 
     private fun showTimePicker(isStart: Boolean) {
@@ -322,6 +447,15 @@ class EventModalFragment : BottomSheetDialogFragment() {
         }
         if (repeatFrequency == "WEEKLY" && selectedDaysOfWeek.isNotEmpty()) {
             sb.append(";BYDAY=${selectedDaysOfWeek.joinToString(",")}")
+        }
+        // Add repeat end
+        when (repeatEndType) {
+            "COUNT" -> sb.append(";COUNT=$repeatCount")
+            "UNTIL" -> repeatUntil?.let { until ->
+                val format = java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", java.util.Locale.US)
+                format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                sb.append(";UNTIL=${format.format(until.time)}")
+            }
         }
         return sb.toString()
     }

@@ -463,30 +463,16 @@
                     android:textSize="14sp"
                     android:textColor="@android:color/black" />
 
-                <ImageButton
-                    android:id="@+id/decreaseOccurrences"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:src="@android:drawable/ic_media_previous"
-                    android:background="@drawable/circle_button_background"
-                    android:contentDescription="@string/decrease" />
-
-                <TextView
-                    android:id="@+id/occurrencesValue"
-                    android:layout_width="48dp"
+                <EditText
+                    android:id="@+id/occurrencesEditText"
+                    android:layout_width="64dp"
                     android:layout_height="wrap_content"
+                    android:inputType="number"
                     android:text="10"
                     android:textSize="16sp"
                     android:textAlignment="center"
-                    android:textColor="@android:color/black" />
-
-                <ImageButton
-                    android:id="@+id/increaseOccurrences"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:src="@android:drawable/ic_media_next"
-                    android:background="@drawable/circle_button_background"
-                    android:contentDescription="@string/increase" />
+                    android:background="@drawable/edittext_border"
+                    android:padding="8dp" />
 
             </LinearLayout>
 

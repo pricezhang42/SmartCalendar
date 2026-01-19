@@ -1,12 +1,16 @@
 package com.example.smartcalendar.data.repository
 
+import android.content.Context
+import android.content.SharedPreferences
 import com.example.smartcalendar.data.model.EventInstance
 import com.example.smartcalendar.data.model.ICalEvent
 import com.example.smartcalendar.data.util.InstanceGenerator
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.*
 
 /**
- * Local calendar repository managing events in memory.
+ * Local calendar repository managing events with persistence.
  * Uses Map for O(1) event lookup by UID.
  */
 class LocalCalendarRepository private constructor() {
@@ -19,13 +23,27 @@ class LocalCalendarRepository private constructor() {
     private var cacheRangeStart = 0L
     private var cacheRangeEnd = 0L
     
+    private var prefs: SharedPreferences? = null
+    
     companion object {
         @Volatile
         private var instance: LocalCalendarRepository? = null
+        private const val PREFS_NAME = "smartcalendar_events"
+        private const val KEY_EVENTS = "events"
         
         fun getInstance(): LocalCalendarRepository {
             return instance ?: synchronized(this) {
                 instance ?: LocalCalendarRepository().also { instance = it }
+            }
+        }
+        
+        /**
+         * Initialize with context to enable persistence
+         */
+        fun init(context: Context) {
+            getInstance().apply {
+                prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                loadFromStorage()
             }
         }
     }
@@ -46,6 +64,7 @@ class LocalCalendarRepository private constructor() {
     fun addEvent(event: ICalEvent): Boolean {
         events[event.uid] = event
         invalidateCache()
+        saveToStorage()
         return true
     }
     
@@ -56,6 +75,7 @@ class LocalCalendarRepository private constructor() {
         if (!events.containsKey(event.uid)) return false
         events[event.uid] = event.copy(lastModified = System.currentTimeMillis())
         invalidateCache()
+        saveToStorage()
         return true
     }
     
@@ -64,7 +84,10 @@ class LocalCalendarRepository private constructor() {
      */
     fun deleteEvent(uid: String): Boolean {
         val removed = events.remove(uid) != null
-        if (removed) invalidateCache()
+        if (removed) {
+            invalidateCache()
+            saveToStorage()
+        }
         return removed
     }
     
@@ -87,6 +110,7 @@ class LocalCalendarRepository private constructor() {
         
         events[uid] = event.copy(exdate = newExdate, lastModified = System.currentTimeMillis())
         invalidateCache()
+        saveToStorage()
         return true
     }
     
@@ -113,6 +137,7 @@ class LocalCalendarRepository private constructor() {
         
         events[uid] = event.copy(rrule = newRrule, lastModified = System.currentTimeMillis())
         invalidateCache()
+        saveToStorage()
         return true
     }
     
@@ -158,6 +183,7 @@ class LocalCalendarRepository private constructor() {
     fun clear() {
         events.clear()
         invalidateCache()
+        saveToStorage()
     }
     
     /**
@@ -169,5 +195,70 @@ class LocalCalendarRepository private constructor() {
         cachedInstances = emptyList()
         cacheRangeStart = 0L
         cacheRangeEnd = 0L
+    }
+    
+    // --- Persistence ---
+    
+    private fun saveToStorage() {
+        val prefs = this.prefs ?: return
+        val jsonArray = JSONArray()
+        events.values.forEach { event ->
+            jsonArray.put(eventToJson(event))
+        }
+        prefs.edit().putString(KEY_EVENTS, jsonArray.toString()).apply()
+    }
+    
+    private fun loadFromStorage() {
+        val prefs = this.prefs ?: return
+        val jsonStr = prefs.getString(KEY_EVENTS, null) ?: return
+        try {
+            val jsonArray = JSONArray(jsonStr)
+            for (i in 0 until jsonArray.length()) {
+                val event = jsonToEvent(jsonArray.getJSONObject(i))
+                events[event.uid] = event
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    
+    private fun eventToJson(event: ICalEvent): JSONObject {
+        return JSONObject().apply {
+            put("uid", event.uid)
+            put("summary", event.summary)
+            put("description", event.description)
+            put("location", event.location)
+            put("dtStart", event.dtStart)
+            put("dtEnd", event.dtEnd)
+            put("duration", event.duration ?: "")
+            put("allDay", event.allDay)
+            put("rrule", event.rrule ?: "")
+            put("rdate", event.rdate ?: "")
+            put("exdate", event.exdate ?: "")
+            put("exrule", event.exrule ?: "")
+            put("color", event.color)
+            put("lastModified", event.lastModified)
+            put("originalId", event.originalId ?: 0L)
+        }
+    }
+    
+    private fun jsonToEvent(json: JSONObject): ICalEvent {
+        return ICalEvent(
+            uid = json.getString("uid"),
+            summary = json.getString("summary"),
+            description = json.optString("description", ""),
+            location = json.optString("location", ""),
+            dtStart = json.getLong("dtStart"),
+            dtEnd = json.getLong("dtEnd"),
+            duration = json.optString("duration", "").ifEmpty { null },
+            allDay = json.optBoolean("allDay", false),
+            rrule = json.optString("rrule", "").ifEmpty { null },
+            rdate = json.optString("rdate", "").ifEmpty { null },
+            exdate = json.optString("exdate", "").ifEmpty { null },
+            exrule = json.optString("exrule", "").ifEmpty { null },
+            color = json.optInt("color", -0x1A8CFF),
+            lastModified = json.optLong("lastModified", System.currentTimeMillis()),
+            originalId = json.optLong("originalId", 0L).takeIf { it != 0L }
+        )
     }
 }
