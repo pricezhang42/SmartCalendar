@@ -13,6 +13,7 @@
 
         <!-- Header -->
         <TextView
+            android:id="@+id/modalTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/new_event"
@@ -209,9 +210,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:hint="@string/hint_description"
-                android:inputType="textMultiLine"
-                android:minLines="2"
-                android:maxLines="4" />
+                android:inputType="textMultiLine|textCapSentences"
+                android:maxLines="10" />
 
         </com.google.android.material.textfield.TextInputLayout>
 
@@ -504,14 +504,15 @@
                 android:id="@+id/cancelButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/cancel"
+                android:text="CANCEL"
+                android:textColor="@android:color/darker_gray"
                 style="@style/Widget.MaterialComponents.Button.TextButton" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/saveButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/save" />
+                android:text="SAVE" />
 
         </LinearLayout>
 

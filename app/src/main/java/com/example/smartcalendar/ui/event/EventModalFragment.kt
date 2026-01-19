@@ -104,6 +104,8 @@ class EventModalFragment : BottomSheetDialogFragment() {
             // Parse RRULE for repeat options
             event.rrule?.let { parseRRule(it) }
             
+            // Set modal title to event title
+            binding.modalTitle.text = event.summary
             binding.deleteButton.visibility = View.VISIBLE
         } ?: run {
             // New event - use initial time from arguments
