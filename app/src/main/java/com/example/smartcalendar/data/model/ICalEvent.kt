@@ -1,13 +1,33 @@
 package com.example.smartcalendar.data.model
 
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 import java.util.UUID
 
 /**
  * iCalendar format event model.
- * Represents a calendar event with full RFC 5545 recurrence support.
+ * Room entity with full RFC 5545 recurrence support and sync status.
  */
+@Entity(
+    tableName = "events",
+    foreignKeys = [
+        ForeignKey(
+            entity = LocalCalendar::class,
+            parentColumns = ["id"],
+            childColumns = ["calendarId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("calendarId"), Index("userId")]
+)
+@Serializable
 data class ICalEvent(
+    @PrimaryKey
     val uid: String = UUID.randomUUID().toString(),
+    val userId: String = "",
     val calendarId: String = "personal", // Reference to LocalCalendar
     val summary: String,
     val description: String = "",
@@ -22,7 +42,10 @@ data class ICalEvent(
     val exrule: String? = null,
     val color: Int = -0x1A8CFF, // Default blue
     val lastModified: Long = System.currentTimeMillis(),
-    val originalId: Long? = null // For tracking imported events
+    val originalId: Long? = null, // For tracking imported events
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val syncStatus: SyncStatus = SyncStatus.PENDING
 ) {
     val isRecurring: Boolean
         get() = !rrule.isNullOrEmpty()

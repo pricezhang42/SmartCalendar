@@ -107,4 +107,12 @@
     <string name="edit_calendar">Edit Calendar</string>
     <string name="calendar_name">Calendar name</string>
     <string name="calendar_color">Color</string>
+    
+    <!-- Auth -->
+    <string name="email_hint">Email</string>
+    <string name="password_hint">Password</string>
+    <string name="sign_in">Sign In</string>
+    <string name="sign_up">Create Account</string>
+    <string name="sign_out">Sign Out</string>
+    <string name="sync_now">Sync Now</string>
 </resources>

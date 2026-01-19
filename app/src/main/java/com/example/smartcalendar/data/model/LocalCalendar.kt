@@ -1,16 +1,27 @@
 package com.example.smartcalendar.data.model
 
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 import java.util.UUID
 
 /**
  * Local calendar model for app-managed calendars.
+ * Room entity with sync support.
  */
+@Entity(tableName = "calendars")
+@Serializable
 data class LocalCalendar(
+    @PrimaryKey
     val id: String = UUID.randomUUID().toString(),
+    val userId: String = "",
     val name: String,
     val color: Int,
     val isDefault: Boolean = false,
-    val isVisible: Boolean = true
+    val isVisible: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val syncStatus: SyncStatus = SyncStatus.PENDING
 ) {
     companion object {
         // Default calendar colors
@@ -26,15 +37,17 @@ data class LocalCalendar(
             COLOR_ORANGE, COLOR_RED, COLOR_TEAL
         )
         
-        fun createDefault(): List<LocalCalendar> = listOf(
+        fun createDefault(userId: String): List<LocalCalendar> = listOf(
             LocalCalendar(
-                id = "personal",
+                id = "personal_$userId",
+                userId = userId,
                 name = "Personal",
                 color = COLOR_BLUE,
                 isDefault = true
             ),
             LocalCalendar(
-                id = "work",
+                id = "work_$userId",
+                userId = userId,
                 name = "Work",
                 color = COLOR_GREEN,
                 isDefault = true
