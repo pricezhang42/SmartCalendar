@@ -68,10 +68,12 @@ class CalendarImporter(private val context: Context) {
     }
     
     /**
-     * Import all events from a calendar
+     * Import all events from a calendar into a local app calendar
+     * @param calendarId The system calendar to import from
+     * @param targetCalendarId The local app calendar to import into
      * @return number of events imported
      */
-    fun importFromCalendar(calendarId: Long): Int {
+    fun importFromCalendar(calendarId: Long, targetCalendarId: String = "personal"): Int {
         val repository = LocalCalendarRepository.getInstance()
         var importedCount = 0
         
@@ -105,7 +107,7 @@ class CalendarImporter(private val context: Context) {
         
         cursor?.use {
             while (it.moveToNext()) {
-                val event = cursorToICalEvent(it)
+                val event = cursorToICalEvent(it, targetCalendarId)
                 if (event != null) {
                     // Check for conflict: same originalId and title
                     val existing = repository.findByOriginalIdAndTitle(event.originalId ?: 0, event.summary)
@@ -124,7 +126,7 @@ class CalendarImporter(private val context: Context) {
         return importedCount
     }
     
-    private fun cursorToICalEvent(cursor: Cursor): ICalEvent? {
+    private fun cursorToICalEvent(cursor: Cursor, targetCalendarId: String): ICalEvent? {
         val id = cursor.getLong(0)
         val title = cursor.getString(1) ?: return null
         val dtStart = cursor.getLong(4)
@@ -150,6 +152,7 @@ class CalendarImporter(private val context: Context) {
         
         return ICalEvent(
             uid = UUID.randomUUID().toString(),
+            calendarId = targetCalendarId,
             summary = title,
             description = cursor.getString(2) ?: "",
             location = cursor.getString(3) ?: "",

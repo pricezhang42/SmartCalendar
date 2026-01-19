@@ -76,9 +76,11 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
                     fragment?.setOnTitleChangeListener { title ->
                         supportActionBar?.title = title
                     }
+                    binding.fab.visibility = android.view.View.VISIBLE
                 }
                 R.id.MineFragment -> {
                     supportActionBar?.title = getString(R.string.nav_mine)
+                    binding.fab.visibility = android.view.View.GONE
                 }
             }
         }
@@ -118,6 +120,65 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         binding.navView.findViewById<android.view.View>(R.id.exportButton)?.setOnClickListener {
             showExportDialog()
         }
+        
+        // Populate calendar checkboxes
+        setupCalendarList()
+    }
+    
+    private fun setupCalendarList() {
+        val container = binding.navView.findViewById<android.widget.LinearLayout>(R.id.calendarsContainer) ?: return
+        container.removeAllViews()
+        
+        localRepository.getCalendars().forEach { calendar ->
+            val row = layoutInflater.inflate(android.R.layout.simple_list_item_multiple_choice, container, false) as android.widget.CheckedTextView
+            row.apply {
+                text = calendar.name
+                isChecked = calendar.isVisible
+                checkMarkDrawable = null // We'll use custom checkbox
+                setPadding(0, 16, 0, 16)
+                
+                // Create custom row with color dot
+                val customRow = android.widget.LinearLayout(this@MainActivity).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(0, 12, 0, 12)
+                    
+                    // Color dot
+                    val colorDot = android.view.View(context).apply {
+                        val size = (24 * resources.displayMetrics.density).toInt()
+                        layoutParams = android.widget.LinearLayout.LayoutParams(size, size).apply {
+                            marginEnd = (12 * resources.displayMetrics.density).toInt()
+                        }
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            shape = android.graphics.drawable.GradientDrawable.OVAL
+                            setColor(calendar.color)
+                        }
+                    }
+                    addView(colorDot)
+                    
+                    // Calendar name
+                    val nameText = android.widget.TextView(context).apply {
+                        text = calendar.name
+                        textSize = 14f
+                        setTextColor(android.graphics.Color.BLACK)
+                        layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    }
+                    addView(nameText)
+                    
+                    // Checkbox
+                    val checkbox = android.widget.CheckBox(context).apply {
+                        isChecked = calendar.isVisible
+                        buttonTintList = android.content.res.ColorStateList.valueOf(calendar.color)
+                        setOnCheckedChangeListener { _, checked ->
+                            localRepository.setCalendarVisible(calendar.id, checked)
+                            getCurrentCalendarFragment()?.loadCalendarData()
+                        }
+                    }
+                    addView(checkbox)
+                }
+                container.addView(customRow)
+            }
+        }
     }
 
     private fun updateViewModeSelection(isMonth: Boolean) {
@@ -155,48 +216,76 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
     }
 
     private fun showImportDialog() {
-        val calendars = importer.getImportableCalendars()
-        if (calendars.isEmpty()) {
-            Toast.makeText(this, "No calendars available for import", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val names = calendars.map { "${it.name} (${it.accountName})" }.toTypedArray()
+        val localCalendars = localRepository.getCalendars()
+        val localNames = localCalendars.map { it.name }.toTypedArray()
         
+        // First, select local app calendar to import INTO
         AlertDialog.Builder(this)
-            .setTitle(getString(R.string.select_calendar))
-            .setItems(names) { _, which ->
-                val selected = calendars[which]
-                val count = importer.importFromCalendar(selected.id)
-                Toast.makeText(this, getString(R.string.import_success, count), Toast.LENGTH_SHORT).show()
-                binding.drawerLayout.closeDrawer(GravityCompat.START)
-                refreshCalendar()
+            .setTitle("Import to which calendar?")
+            .setItems(localNames) { _, localWhich ->
+                val targetCalendarId = localCalendars[localWhich].id
+                
+                // Then, select system calendar to import FROM
+                val systemCalendars = importer.getImportableCalendars()
+                if (systemCalendars.isEmpty()) {
+                    Toast.makeText(this, "No system calendars available for import", Toast.LENGTH_SHORT).show()
+                    return@setItems
+                }
+                
+                val systemNames = systemCalendars.map { "${it.name} (${it.accountName})" }.toTypedArray()
+                
+                AlertDialog.Builder(this)
+                    .setTitle("Import from which calendar?")
+                    .setItems(systemNames) { _, systemWhich ->
+                        val selected = systemCalendars[systemWhich]
+                        val count = importer.importFromCalendar(selected.id, targetCalendarId)
+                        Toast.makeText(this, getString(R.string.import_success, count), Toast.LENGTH_SHORT).show()
+                        binding.drawerLayout.closeDrawer(GravityCompat.START)
+                        refreshCalendar()
+                        setupCalendarList()
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
     private fun showExportDialog() {
-        if (localRepository.getEventCount() == 0) {
-            Toast.makeText(this, "No events to export", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val calendars = exporter.getExportableCalendars()
-        if (calendars.isEmpty()) {
-            Toast.makeText(this, "No writable calendars available", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val names = calendars.map { "${it.name} (${it.accountName})" }.toTypedArray()
+        val localCalendars = localRepository.getCalendars()
+        val localNames = localCalendars.map { it.name }.toTypedArray()
         
+        // First, select local app calendar to export FROM
         AlertDialog.Builder(this)
-            .setTitle(getString(R.string.select_calendar))
-            .setItems(names) { _, which ->
-                val selected = calendars[which]
-                val count = exporter.exportToCalendar(selected.id)
-                Toast.makeText(this, getString(R.string.export_success, count), Toast.LENGTH_SHORT).show()
-                binding.drawerLayout.closeDrawer(GravityCompat.START)
+            .setTitle("Export from which calendar?")
+            .setItems(localNames) { _, localWhich ->
+                val sourceCalendarId = localCalendars[localWhich].id
+                val eventCount = localRepository.getAllEvents().count { it.calendarId == sourceCalendarId }
+                
+                if (eventCount == 0) {
+                    Toast.makeText(this, "No events in ${localCalendars[localWhich].name}", Toast.LENGTH_SHORT).show()
+                    return@setItems
+                }
+                
+                // Then, select system calendar to export TO
+                val systemCalendars = exporter.getExportableCalendars()
+                if (systemCalendars.isEmpty()) {
+                    Toast.makeText(this, "No writable system calendars available", Toast.LENGTH_SHORT).show()
+                    return@setItems
+                }
+                
+                val systemNames = systemCalendars.map { "${it.name} (${it.accountName})" }.toTypedArray()
+                
+                AlertDialog.Builder(this)
+                    .setTitle("Export to which calendar?")
+                    .setItems(systemNames) { _, systemWhich ->
+                        val selected = systemCalendars[systemWhich]
+                        val count = exporter.exportToCalendar(selected.id, sourceCalendarId)
+                        Toast.makeText(this, getString(R.string.export_success, count), Toast.LENGTH_SHORT).show()
+                        binding.drawerLayout.closeDrawer(GravityCompat.START)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()

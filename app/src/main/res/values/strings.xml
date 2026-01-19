@@ -17,8 +17,6 @@
     <string name="coming_soon">Soon</string>
     
     <!-- Calendar -->
-    <string name="calendars_header">Calendars</string>
-    <string name="calendars_subtitle">Select calendars to show on your timeline.</string>
     <string name="show_all">Show All</string>
     <string name="refresh_calendars">Refresh device calendars</string>
     
@@ -100,4 +98,13 @@
     <!-- Repeat End Options -->
     <string name="repeat_never">Never</string>
     <string name="repeat_until">On date…</string>
+    
+    <!-- Calendars -->
+    <string name="calendars_header">Calendars</string>
+    <string name="calendars_subtitle">Select calendars to show on your timeline.</string>
+    <string name="add_calendar">Add Calendar</string>
+    <string name="add_calendar_button">New Calendar</string>
+    <string name="edit_calendar">Edit Calendar</string>
+    <string name="calendar_name">Calendar name</string>
+    <string name="calendar_color">Color</string>
 </resources>

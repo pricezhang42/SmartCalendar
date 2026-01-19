@@ -4,16 +4,19 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.example.smartcalendar.data.model.EventInstance
 import com.example.smartcalendar.data.model.ICalEvent
+import com.example.smartcalendar.data.model.LocalCalendar
 import com.example.smartcalendar.data.util.InstanceGenerator
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.*
 
 /**
- * Local calendar repository managing events with persistence.
- * Uses Map for O(1) event lookup by UID.
+ * Local calendar repository managing calendars and events with persistence.
  */
 class LocalCalendarRepository private constructor() {
+    
+    // Calendars stored by ID
+    private val calendars = mutableMapOf<String, LocalCalendar>()
     
     // Events stored by UID for efficient lookup
     private val events = mutableMapOf<String, ICalEvent>()
@@ -28,8 +31,9 @@ class LocalCalendarRepository private constructor() {
     companion object {
         @Volatile
         private var instance: LocalCalendarRepository? = null
-        private const val PREFS_NAME = "smartcalendar_events"
+        private const val PREFS_NAME = "smartcalendar_data"
         private const val KEY_EVENTS = "events"
+        private const val KEY_CALENDARS = "calendars"
         
         fun getInstance(): LocalCalendarRepository {
             return instance ?: synchronized(this) {
@@ -37,30 +41,72 @@ class LocalCalendarRepository private constructor() {
             }
         }
         
-        /**
-         * Initialize with context to enable persistence
-         */
         fun init(context: Context) {
             getInstance().apply {
                 prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 loadFromStorage()
+                ensureDefaultCalendars()
             }
         }
     }
     
-    /**
-     * Get all events
-     */
+    // ==================== Calendar Methods ====================
+    
+    fun getCalendars(): List<LocalCalendar> = calendars.values.toList()
+    
+    fun getCalendar(id: String): LocalCalendar? = calendars[id]
+    
+    fun getVisibleCalendars(): List<LocalCalendar> = calendars.values.filter { it.isVisible }
+    
+    fun getVisibleCalendarIds(): Set<String> = calendars.values.filter { it.isVisible }.map { it.id }.toSet()
+    
+    fun addCalendar(calendar: LocalCalendar): Boolean {
+        calendars[calendar.id] = calendar
+        saveToStorage()
+        return true
+    }
+    
+    fun updateCalendar(calendar: LocalCalendar): Boolean {
+        if (!calendars.containsKey(calendar.id)) return false
+        calendars[calendar.id] = calendar
+        invalidateCache()
+        saveToStorage()
+        return true
+    }
+    
+    fun deleteCalendar(id: String): Boolean {
+        val calendar = calendars[id] ?: return false
+        if (calendar.isDefault) return false // Cannot delete default calendars
+        
+        // Delete all events in this calendar
+        events.values.filter { it.calendarId == id }.forEach { events.remove(it.uid) }
+        calendars.remove(id)
+        invalidateCache()
+        saveToStorage()
+        return true
+    }
+    
+    fun setCalendarVisible(id: String, visible: Boolean): Boolean {
+        val calendar = calendars[id] ?: return false
+        calendars[id] = calendar.copy(isVisible = visible)
+        invalidateCache()
+        saveToStorage()
+        return true
+    }
+    
+    private fun ensureDefaultCalendars() {
+        if (calendars.isEmpty()) {
+            LocalCalendar.createDefault().forEach { calendars[it.id] = it }
+            saveToStorage()
+        }
+    }
+    
+    // ==================== Event Methods ====================
+    
     fun getAllEvents(): List<ICalEvent> = events.values.toList()
     
-    /**
-     * Get event by UID
-     */
     fun getEvent(uid: String): ICalEvent? = events[uid]
     
-    /**
-     * Add a new event
-     */
     fun addEvent(event: ICalEvent): Boolean {
         events[event.uid] = event
         invalidateCache()
@@ -68,9 +114,6 @@ class LocalCalendarRepository private constructor() {
         return true
     }
     
-    /**
-     * Update an existing event
-     */
     fun updateEvent(event: ICalEvent): Boolean {
         if (!events.containsKey(event.uid)) return false
         events[event.uid] = event.copy(lastModified = System.currentTimeMillis())
@@ -79,9 +122,6 @@ class LocalCalendarRepository private constructor() {
         return true
     }
     
-    /**
-     * Delete an event by UID
-     */
     fun deleteEvent(uid: String): Boolean {
         val removed = events.remove(uid) != null
         if (removed) {
@@ -91,9 +131,6 @@ class LocalCalendarRepository private constructor() {
         return removed
     }
     
-    /**
-     * Add exception date to a recurring event (delete single instance)
-     */
     fun addExceptionDate(uid: String, instanceTime: Long): Boolean {
         val event = events[uid] ?: return false
         if (!event.isRecurring) return false
@@ -102,11 +139,7 @@ class LocalCalendarRepository private constructor() {
         dateFormat.timeZone = TimeZone.getTimeZone("UTC")
         val exdateStr = dateFormat.format(Date(instanceTime))
         
-        val newExdate = if (event.exdate.isNullOrEmpty()) {
-            exdateStr
-        } else {
-            "${event.exdate},$exdateStr"
-        }
+        val newExdate = if (event.exdate.isNullOrEmpty()) exdateStr else "${event.exdate},$exdateStr"
         
         events[uid] = event.copy(exdate = newExdate, lastModified = System.currentTimeMillis())
         invalidateCache()
@@ -114,9 +147,6 @@ class LocalCalendarRepository private constructor() {
         return true
     }
     
-    /**
-     * End recurring event at specific instance (delete this and following)
-     */
     fun endRecurrenceAtInstance(uid: String, instanceTime: Long): Boolean {
         val event = events[uid] ?: return false
         if (!event.isRecurring) return false
@@ -142,20 +172,22 @@ class LocalCalendarRepository private constructor() {
     }
     
     /**
-     * Get instances for display within a time range
+     * Get instances filtered by visible calendars
      */
     fun getInstances(startTime: Long, endTime: Long): List<EventInstance> {
-        // Use cache if range matches
         if (startTime == cacheRangeStart && endTime == cacheRangeEnd && cachedInstances.isNotEmpty()) {
             return cachedInstances
         }
         
+        val visibleIds = getVisibleCalendarIds()
         val allInstances = mutableListOf<EventInstance>()
-        events.values.forEach { event ->
-            allInstances.addAll(InstanceGenerator.generateInstances(event, startTime, endTime))
-        }
         
-        // Sort by start time
+        events.values
+            .filter { visibleIds.contains(it.calendarId) }
+            .forEach { event ->
+                allInstances.addAll(InstanceGenerator.generateInstances(event, startTime, endTime))
+            }
+        
         cachedInstances = allInstances.sortedBy { it.startTime }
         cacheRangeStart = startTime
         cacheRangeEnd = endTime
@@ -163,32 +195,17 @@ class LocalCalendarRepository private constructor() {
         return cachedInstances
     }
     
-    /**
-     * Find event by original ID (used for import conflict detection)
-     */
-    fun findByOriginalId(originalId: Long): ICalEvent? {
-        return events.values.find { it.originalId == originalId }
-    }
+    fun findByOriginalId(originalId: Long): ICalEvent? = events.values.find { it.originalId == originalId }
     
-    /**
-     * Find event by original ID and title (conflict detection)
-     */
-    fun findByOriginalIdAndTitle(originalId: Long, title: String): ICalEvent? {
-        return events.values.find { it.originalId == originalId && it.summary == title }
-    }
+    fun findByOriginalIdAndTitle(originalId: Long, title: String): ICalEvent? =
+        events.values.find { it.originalId == originalId && it.summary == title }
     
-    /**
-     * Clear all events
-     */
     fun clear() {
         events.clear()
         invalidateCache()
         saveToStorage()
     }
     
-    /**
-     * Get event count
-     */
     fun getEventCount(): Int = events.size
     
     private fun invalidateCache() {
@@ -197,68 +214,102 @@ class LocalCalendarRepository private constructor() {
         cacheRangeEnd = 0L
     }
     
-    // --- Persistence ---
+    // ==================== Persistence ====================
     
     private fun saveToStorage() {
         val prefs = this.prefs ?: return
-        val jsonArray = JSONArray()
-        events.values.forEach { event ->
-            jsonArray.put(eventToJson(event))
-        }
-        prefs.edit().putString(KEY_EVENTS, jsonArray.toString()).apply()
+        
+        // Save calendars
+        val calendarsJson = JSONArray()
+        calendars.values.forEach { calendarsJson.put(calendarToJson(it)) }
+        
+        // Save events
+        val eventsJson = JSONArray()
+        events.values.forEach { eventsJson.put(eventToJson(it)) }
+        
+        prefs.edit()
+            .putString(KEY_CALENDARS, calendarsJson.toString())
+            .putString(KEY_EVENTS, eventsJson.toString())
+            .apply()
     }
     
     private fun loadFromStorage() {
         val prefs = this.prefs ?: return
-        val jsonStr = prefs.getString(KEY_EVENTS, null) ?: return
-        try {
-            val jsonArray = JSONArray(jsonStr)
-            for (i in 0 until jsonArray.length()) {
-                val event = jsonToEvent(jsonArray.getJSONObject(i))
-                events[event.uid] = event
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        
+        // Load calendars
+        prefs.getString(KEY_CALENDARS, null)?.let { jsonStr ->
+            try {
+                val jsonArray = JSONArray(jsonStr)
+                for (i in 0 until jsonArray.length()) {
+                    val cal = jsonToCalendar(jsonArray.getJSONObject(i))
+                    calendars[cal.id] = cal
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        
+        // Load events
+        prefs.getString(KEY_EVENTS, null)?.let { jsonStr ->
+            try {
+                val jsonArray = JSONArray(jsonStr)
+                for (i in 0 until jsonArray.length()) {
+                    val event = jsonToEvent(jsonArray.getJSONObject(i))
+                    events[event.uid] = event
+                }
+            } catch (e: Exception) { e.printStackTrace() }
         }
     }
     
-    private fun eventToJson(event: ICalEvent): JSONObject {
-        return JSONObject().apply {
-            put("uid", event.uid)
-            put("summary", event.summary)
-            put("description", event.description)
-            put("location", event.location)
-            put("dtStart", event.dtStart)
-            put("dtEnd", event.dtEnd)
-            put("duration", event.duration ?: "")
-            put("allDay", event.allDay)
-            put("rrule", event.rrule ?: "")
-            put("rdate", event.rdate ?: "")
-            put("exdate", event.exdate ?: "")
-            put("exrule", event.exrule ?: "")
-            put("color", event.color)
-            put("lastModified", event.lastModified)
-            put("originalId", event.originalId ?: 0L)
-        }
+    private fun calendarToJson(cal: LocalCalendar) = JSONObject().apply {
+        put("id", cal.id)
+        put("name", cal.name)
+        put("color", cal.color)
+        put("isDefault", cal.isDefault)
+        put("isVisible", cal.isVisible)
     }
     
-    private fun jsonToEvent(json: JSONObject): ICalEvent {
-        return ICalEvent(
-            uid = json.getString("uid"),
-            summary = json.getString("summary"),
-            description = json.optString("description", ""),
-            location = json.optString("location", ""),
-            dtStart = json.getLong("dtStart"),
-            dtEnd = json.getLong("dtEnd"),
-            duration = json.optString("duration", "").ifEmpty { null },
-            allDay = json.optBoolean("allDay", false),
-            rrule = json.optString("rrule", "").ifEmpty { null },
-            rdate = json.optString("rdate", "").ifEmpty { null },
-            exdate = json.optString("exdate", "").ifEmpty { null },
-            exrule = json.optString("exrule", "").ifEmpty { null },
-            color = json.optInt("color", -0x1A8CFF),
-            lastModified = json.optLong("lastModified", System.currentTimeMillis()),
-            originalId = json.optLong("originalId", 0L).takeIf { it != 0L }
-        )
+    private fun jsonToCalendar(json: JSONObject) = LocalCalendar(
+        id = json.getString("id"),
+        name = json.getString("name"),
+        color = json.getInt("color"),
+        isDefault = json.optBoolean("isDefault", false),
+        isVisible = json.optBoolean("isVisible", true)
+    )
+    
+    private fun eventToJson(event: ICalEvent) = JSONObject().apply {
+        put("uid", event.uid)
+        put("calendarId", event.calendarId)
+        put("summary", event.summary)
+        put("description", event.description)
+        put("location", event.location)
+        put("dtStart", event.dtStart)
+        put("dtEnd", event.dtEnd)
+        put("duration", event.duration ?: "")
+        put("allDay", event.allDay)
+        put("rrule", event.rrule ?: "")
+        put("rdate", event.rdate ?: "")
+        put("exdate", event.exdate ?: "")
+        put("exrule", event.exrule ?: "")
+        put("color", event.color)
+        put("lastModified", event.lastModified)
+        put("originalId", event.originalId ?: 0L)
     }
+    
+    private fun jsonToEvent(json: JSONObject) = ICalEvent(
+        uid = json.getString("uid"),
+        calendarId = json.optString("calendarId", "personal"),
+        summary = json.getString("summary"),
+        description = json.optString("description", ""),
+        location = json.optString("location", ""),
+        dtStart = json.getLong("dtStart"),
+        dtEnd = json.getLong("dtEnd"),
+        duration = json.optString("duration", "").ifEmpty { null },
+        allDay = json.optBoolean("allDay", false),
+        rrule = json.optString("rrule", "").ifEmpty { null },
+        rdate = json.optString("rdate", "").ifEmpty { null },
+        exdate = json.optString("exdate", "").ifEmpty { null },
+        exrule = json.optString("exrule", "").ifEmpty { null },
+        color = json.optInt("color", -0x1A8CFF),
+        lastModified = json.optLong("lastModified", System.currentTimeMillis()),
+        originalId = json.optLong("originalId", 0L).takeIf { it != 0L }
+    )
 }

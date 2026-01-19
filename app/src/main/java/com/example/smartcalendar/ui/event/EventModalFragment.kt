@@ -12,6 +12,7 @@ import android.widget.TextView
 import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.EventInstance
 import com.example.smartcalendar.data.model.ICalEvent
+import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentEventModalBinding
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import java.text.SimpleDateFormat
@@ -43,6 +44,9 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private var repeatEndType = "NEVER" // NEVER, COUNT, UNTIL
     private var repeatCount = 10
     private var repeatUntil: Calendar? = null
+    
+    // Calendar selection
+    private var selectedCalendarId = "personal"
 
     var onSaveListener: ((ICalEvent) -> Unit)? = null
     var onDeleteListener: ((String) -> Unit)? = null
@@ -116,9 +120,9 @@ class EventModalFragment : BottomSheetDialogFragment() {
             }
         }
         
-        // Calendar picker - only "Personal" for now
-        binding.calendarValue.text = "Personal"
-        binding.calendarColor.setBackgroundColor(android.graphics.Color.parseColor("#4285F4"))
+        // Calendar picker
+        selectedCalendarId = existingEvent?.calendarId ?: "personal"
+        updateCalendarDisplay()
 
         binding.allDaySwitch.isChecked = isAllDay
         binding.repeatSwitch.isChecked = repeatEnabled
@@ -223,6 +227,9 @@ class EventModalFragment : BottomSheetDialogFragment() {
         binding.startTimeValue.setOnClickListener { showTimePicker(true) }
         binding.endTimeValue.setOnClickListener { showTimePicker(false) }
         
+        // Calendar picker
+        binding.calendarRow.setOnClickListener { showCalendarPicker() }
+        
         binding.allDaySwitch.setOnCheckedChangeListener { _, isChecked ->
             isAllDay = isChecked
             updateTimeVisibility()
@@ -316,6 +323,31 @@ class EventModalFragment : BottomSheetDialogFragment() {
         binding.chipYearly.isChecked = repeatFrequency == "YEARLY"
         // Show/hide days of week container
         binding.repeatOnContainer.visibility = if (repeatFrequency == "WEEKLY") View.VISIBLE else View.GONE
+    }
+    
+    private fun showCalendarPicker() {
+        val calendars = LocalCalendarRepository.getInstance().getCalendars()
+        val names = calendars.map { it.name }.toTypedArray()
+        val currentIndex = calendars.indexOfFirst { it.id == selectedCalendarId }.coerceAtLeast(0)
+        
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.select_calendar)
+            .setSingleChoiceItems(names, currentIndex) { dialog, which ->
+                selectedCalendarId = calendars[which].id
+                updateCalendarDisplay()
+                dialog.dismiss()
+            }
+            .show()
+    }
+    
+    private fun updateCalendarDisplay() {
+        val calendar = LocalCalendarRepository.getInstance().getCalendar(selectedCalendarId)
+        binding.calendarValue.text = calendar?.name ?: "Personal"
+        val color = calendar?.color ?: android.graphics.Color.parseColor("#4285F4")
+        binding.calendarColor.background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(color)
+        }
     }
 
     private fun updateUI() {
@@ -417,9 +449,12 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
         val rrule = if (repeatEnabled) buildRRule() else null
         val duration = if (repeatEnabled) ICalEvent.toDurationString(endTime.timeInMillis - startTime.timeInMillis) else null
+        val calendarColor = LocalCalendarRepository.getInstance().getCalendar(selectedCalendarId)?.color 
+            ?: android.graphics.Color.parseColor("#4285F4")
 
         val event = ICalEvent(
             uid = existingEvent?.uid ?: UUID.randomUUID().toString(),
+            calendarId = selectedCalendarId,
             summary = title,
             description = binding.descriptionEditText.text.toString().trim(),
             location = binding.locationEditText.text.toString().trim(),
@@ -429,7 +464,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
             allDay = isAllDay,
             rrule = rrule,
             exdate = existingEvent?.exdate,
-            color = existingEvent?.color ?: android.graphics.Color.parseColor("#4285F4"),
+            color = calendarColor,
             originalId = existingEvent?.originalId
         )
 

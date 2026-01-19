@@ -69,12 +69,18 @@ class CalendarExporter(private val context: Context) {
     }
     
     /**
-     * Export all events to a calendar
+     * Export events from a local app calendar to a system calendar
+     * @param calendarId The system calendar to export to
+     * @param sourceCalendarId The local app calendar to export from (null = all)
      * @return number of events exported
      */
-    fun exportToCalendar(calendarId: Long): Int {
+    fun exportToCalendar(calendarId: Long, sourceCalendarId: String? = null): Int {
         val repository = LocalCalendarRepository.getInstance()
-        val events = repository.getAllEvents()
+        val events = if (sourceCalendarId != null) {
+            repository.getAllEvents().filter { it.calendarId == sourceCalendarId }
+        } else {
+            repository.getAllEvents()
+        }
         var exportedCount = 0
         
         events.forEach { event ->

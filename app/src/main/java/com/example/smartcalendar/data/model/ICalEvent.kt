@@ -8,6 +8,7 @@ import java.util.UUID
  */
 data class ICalEvent(
     val uid: String = UUID.randomUUID().toString(),
+    val calendarId: String = "personal", // Reference to LocalCalendar
     val summary: String,
     val description: String = "",
     val location: String = "",

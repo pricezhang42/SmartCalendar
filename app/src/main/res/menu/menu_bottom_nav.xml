@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:id="@+id/nav_calendar"
+        android:id="@+id/CalendarFragment"
         android:icon="@android:drawable/ic_menu_my_calendar"
         android:title="@string/nav_calendar" />
     <item
-        android:id="@+id/nav_mine"
+        android:id="@+id/MineFragment"
         android:icon="@android:drawable/ic_menu_myplaces"
         android:title="@string/nav_mine" />
 </menu>

@@ -1,31 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
     android:background="@android:color/white">
 
-    <LinearLayout
+    <!-- Header -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:text="@string/calendars_header"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/black" />
+
+    <!-- Calendars List -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/calendarsRecyclerView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:padding="32dp">
+        android:clipToPadding="false"
+        android:paddingHorizontal="16dp" />
 
-        <ImageView
-            android:layout_width="64dp"
-            android:layout_height="64dp"
-            android:src="@android:drawable/ic_menu_my_calendar"
-            android:contentDescription="@string/mine_icon_desc" />
+    <!-- Add New Calendar -->
+    <TextView
+        android:id="@+id/addCalendarButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp"
+        android:text="@string/add_calendar_button"
+        android:textSize="16sp"
+        android:textColor="@color/primary_blue"
+        android:drawablePadding="12dp"
+        android:background="?attr/selectableItemBackground"
+        app:drawableStartCompat="@android:drawable/ic_input_add" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/mine_placeholder"
-            android:textSize="16sp"
-            android:textColor="@android:color/darker_gray" />
-
-    </LinearLayout>
-
-</FrameLayout>
+</LinearLayout>
