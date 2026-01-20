@@ -8,26 +8,26 @@
 - [x] Create LoginActivity UI <!-- id: 4 -->
 - [x] Add auth check to MainActivity <!-- id: 5 -->
 
-## Phase 2: Room Database
-- [/] Create AppDatabase with Room <!-- id: 6 -->
-- [ ] Add CalendarDao and EventDao <!-- id: 7 -->
-- [ ] Update LocalCalendar model for sync <!-- id: 8 -->
-- [ ] Update ICalEvent model for sync <!-- id: 9 -->
-- [ ] Migrate from SharedPreferences to Room <!-- id: 10 -->
+## Phase 2: Room Database ✅
+- [x] Create AppDatabase with Room <!-- id: 6 -->
+- [x] Add CalendarDao and EventDao <!-- id: 7 -->
+- [x] Update LocalCalendar model for sync <!-- id: 8 -->
+- [x] Update ICalEvent model for sync <!-- id: 9 -->
+- [x] Migrate from SharedPreferences to Room <!-- id: 10 -->
 
-## Phase 3: Supabase Sync
-- [ ] Create PostgreSQL schema in Supabase <!-- id: 11 -->
-- [ ] Implement SupabaseRepository <!-- id: 12 -->
-- [ ] Create SyncManager <!-- id: 13 -->
-- [ ] Add real-time subscriptions <!-- id: 14 -->
-- [ ] Add manual sync button <!-- id: 15 -->
-- [ ] Add sync status indicator <!-- id: 16 -->
+## Phase 3: Supabase Sync ✅
+- [x] Create PostgreSQL schema in Supabase <!-- id: 11 -->
+- [x] Implement SupabaseRepository <!-- id: 12 -->
+- [x] Create SyncManager <!-- id: 13 -->
+- [x] Add real-time subscriptions <!-- id: 14 -->
+- [x] Add manual sync button <!-- id: 15 -->
+- [x] Add sync status indicator <!-- id: 16 -->
 
-## Phase 4: Offline Support
-- [ ] Queue offline changes <!-- id: 17 -->
-- [ ] Monitor network state <!-- id: 18 -->
-- [ ] Sync on reconnect <!-- id: 19 -->
-- [ ] Conflict resolution <!-- id: 20 -->
+## Phase 4: Offline Support ✅
+- [x] Queue offline changes <!-- id: 17 -->
+- [x] Monitor network state <!-- id: 18 -->
+- [x] Sync on reconnect <!-- id: 19 -->
+- [x] Conflict resolution <!-- id: 20 -->
 
 ## Phase 5: Testing
 - [ ] Test auth flow <!-- id: 21 -->

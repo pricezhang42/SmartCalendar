@@ -81,6 +81,9 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         syncManager = SyncManager.getInstance(this)
         realtimeSync = RealtimeSync.getInstance(this)
 
+        // Start network monitoring for auto-sync on reconnect
+        syncManager.startNetworkMonitoring()
+
         // Ensure default calendars exist for user
         lifecycleScope.launch {
             localRepository.ensureDefaultCalendars()
@@ -89,7 +92,7 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
             // Start real-time sync
             realtimeSync.startListening()
 
-            // Perform initial sync
+            // Perform initial sync (will handle offline gracefully)
             performSync()
         }
 
@@ -97,6 +100,7 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         setupDrawer()
         setupFab()
         setupSyncStatusObserver()
+        setupNetworkStatusObserver()
         checkPermissions()
     }
 
@@ -434,12 +438,12 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
                 when (status) {
                     SyncManager.SyncState.SYNCING -> {
                         syncMenuItem?.isEnabled = false
-                        syncMenuItem?.setIcon(android.R.drawable.ic_popup_sync)
                         supportActionBar?.subtitle = getString(R.string.syncing)
                     }
                     SyncManager.SyncState.SUCCESS -> {
                         syncMenuItem?.isEnabled = true
                         supportActionBar?.subtitle = null
+                        refreshCalendar()
                     }
                     SyncManager.SyncState.ERROR -> {
                         syncMenuItem?.isEnabled = true
@@ -449,6 +453,31 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
                         syncMenuItem?.isEnabled = true
                         supportActionBar?.subtitle = null
                     }
+                    SyncManager.SyncState.OFFLINE -> {
+                        syncMenuItem?.isEnabled = true
+                        supportActionBar?.subtitle = getString(R.string.offline_mode)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun setupNetworkStatusObserver() {
+        lifecycleScope.launch {
+            syncManager.isOnline.collect { online ->
+                if (online) {
+                    // Back online - subtitle will be cleared by sync status observer
+                } else {
+                    supportActionBar?.subtitle = getString(R.string.offline_mode)
+                }
+            }
+        }
+
+        // Also observe pending changes count
+        lifecycleScope.launch {
+            syncManager.pendingChangesCount.collect { count ->
+                if (count > 0 && !syncManager.isOnline.value) {
+                    supportActionBar?.subtitle = getString(R.string.offline_pending, count)
                 }
             }
         }
@@ -456,6 +485,7 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
 
     override fun onDestroy() {
         super.onDestroy()
+        syncManager.stopNetworkMonitoring()
         lifecycleScope.launch {
             realtimeSync.stopListening()
         }

@@ -5,6 +5,8 @@
     <string name="sync_success">Sync completed</string>
     <string name="sync_error">Sync failed</string>
     <string name="syncing">Syncing…</string>
+    <string name="offline_mode">Offline</string>
+    <string name="offline_pending">Offline • %d pending</string>
     
     <!-- Navigation -->
     <string name="nav_calendar">Calendar</string>

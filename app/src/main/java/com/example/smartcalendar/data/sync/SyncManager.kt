@@ -8,9 +8,12 @@ import com.example.smartcalendar.data.model.SyncStatus
 import com.example.smartcalendar.data.repository.AuthRepository
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.data.repository.SupabaseRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -18,11 +21,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Manages synchronization between local Room database and Supabase cloud.
  * Handles conflict resolution, sync status, and bidirectional sync.
  */
-class SyncManager private constructor(context: Context) {
+class SyncManager private constructor(private val context: Context) {
 
     private val localRepo = LocalCalendarRepository.getInstance(context)
     private val supabaseRepo = SupabaseRepository.getInstance()
     private val authRepo = AuthRepository.getInstance()
+    private val networkMonitor = NetworkMonitor.getInstance(context)
+    private val offlineQueue = OfflineSyncQueue.getInstance(context)
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _syncStatus = MutableStateFlow(SyncState.IDLE)
     val syncStatus: StateFlow<SyncState> = _syncStatus
@@ -30,19 +37,101 @@ class SyncManager private constructor(context: Context) {
     private val _lastSyncTime = MutableStateFlow(0L)
     val lastSyncTime: StateFlow<Long> = _lastSyncTime
 
+    private val _pendingChangesCount = MutableStateFlow(0)
+    val pendingChangesCount: StateFlow<Int> = _pendingChangesCount
+
+    private val _isOnline = MutableStateFlow(true)
+    val isOnline: StateFlow<Boolean> = _isOnline
+
     private val isSyncing = AtomicBoolean(false)
+    private var wasOffline = false
 
     enum class SyncState {
         IDLE,
         SYNCING,
         SUCCESS,
-        ERROR
+        ERROR,
+        OFFLINE
+    }
+
+    /**
+     * Start monitoring network and auto-sync when reconnecting.
+     */
+    fun startNetworkMonitoring() {
+        networkMonitor.startMonitoring()
+
+        scope.launch {
+            networkMonitor.isOnline.collect { online ->
+                _isOnline.value = online
+
+                if (online) {
+                    Log.d(TAG, "Network connected")
+                    if (wasOffline) {
+                        // Was offline, now online - trigger sync
+                        Log.d(TAG, "Reconnected after being offline, triggering sync...")
+                        syncIfNeeded()
+                    }
+                    wasOffline = false
+                } else {
+                    Log.d(TAG, "Network disconnected")
+                    wasOffline = true
+                    _syncStatus.value = SyncState.OFFLINE
+                }
+            }
+        }
+
+        // Update pending changes count periodically
+        scope.launch {
+            updatePendingCount()
+        }
+    }
+
+    /**
+     * Stop network monitoring.
+     */
+    fun stopNetworkMonitoring() {
+        networkMonitor.stopMonitoring()
+    }
+
+    /**
+     * Sync if there are pending changes and we're online.
+     */
+    suspend fun syncIfNeeded(): Result<Unit> {
+        if (!networkMonitor.checkCurrentConnectivity()) {
+            Log.d(TAG, "Offline - skipping sync")
+            _syncStatus.value = SyncState.OFFLINE
+            return Result.failure(Exception("No network connection"))
+        }
+
+        val hasPending = offlineQueue.hasPendingChanges()
+        if (hasPending) {
+            Log.d(TAG, "Has pending changes, syncing...")
+            return sync()
+        }
+
+        Log.d(TAG, "No pending changes")
+        return Result.success(Unit)
+    }
+
+    /**
+     * Update the pending changes count.
+     */
+    private suspend fun updatePendingCount() {
+        _pendingChangesCount.value = offlineQueue.getTotalPendingCount()
     }
 
     /**
      * Perform full bidirectional sync between local and cloud.
      */
     suspend fun sync(): Result<Unit> = withContext(Dispatchers.IO) {
+        // Check network connectivity first
+        if (!networkMonitor.checkCurrentConnectivity()) {
+            Log.d(TAG, "No network - sync deferred")
+            _syncStatus.value = SyncState.OFFLINE
+            wasOffline = true
+            return@withContext Result.failure(Exception("No network connection"))
+        }
+
         if (!isSyncing.compareAndSet(false, true)) {
             return@withContext Result.failure(Exception("Sync already in progress"))
         }
@@ -61,6 +150,9 @@ class SyncManager private constructor(context: Context) {
 
             // Step 2: Sync events
             syncEvents(userId)
+
+            // Update pending count
+            updatePendingCount()
 
             _lastSyncTime.value = System.currentTimeMillis()
             _syncStatus.value = SyncState.SUCCESS
