@@ -9,12 +9,14 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import android.widget.TextView
+import androidx.lifecycle.lifecycleScope
 import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.EventInstance
 import com.example.smartcalendar.data.model.ICalEvent
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentEventModalBinding
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -78,10 +80,22 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        
+
         setupViews()
         setupListeners()
+        initializeCalendar()
         updateUI()
+    }
+
+    private fun initializeCalendar() {
+        lifecycleScope.launch {
+            // Initialize selectedCalendarId with the first available calendar
+            val calendars = LocalCalendarRepository.getInstance().getCalendars()
+            if (calendars.isNotEmpty() && selectedCalendarId == "personal") {
+                selectedCalendarId = existingEvent?.calendarId ?: calendars.first().id
+            }
+            updateCalendarDisplay()
+        }
     }
 
     private fun setupViews() {
@@ -326,27 +340,31 @@ class EventModalFragment : BottomSheetDialogFragment() {
     }
     
     private fun showCalendarPicker() {
-        val calendars = LocalCalendarRepository.getInstance().getCalendars()
-        val names = calendars.map { it.name }.toTypedArray()
-        val currentIndex = calendars.indexOfFirst { it.id == selectedCalendarId }.coerceAtLeast(0)
-        
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.select_calendar)
-            .setSingleChoiceItems(names, currentIndex) { dialog, which ->
-                selectedCalendarId = calendars[which].id
-                updateCalendarDisplay()
-                dialog.dismiss()
-            }
-            .show()
+        lifecycleScope.launch {
+            val calendars = LocalCalendarRepository.getInstance().getCalendars()
+            val names = calendars.map { it.name }.toTypedArray()
+            val currentIndex = calendars.indexOfFirst { it.id == selectedCalendarId }.coerceAtLeast(0)
+
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.select_calendar)
+                .setSingleChoiceItems(names, currentIndex) { dialog, which ->
+                    selectedCalendarId = calendars[which].id
+                    updateCalendarDisplay()
+                    dialog.dismiss()
+                }
+                .show()
+        }
     }
-    
+
     private fun updateCalendarDisplay() {
-        val calendar = LocalCalendarRepository.getInstance().getCalendar(selectedCalendarId)
-        binding.calendarValue.text = calendar?.name ?: "Personal"
-        val color = calendar?.color ?: android.graphics.Color.parseColor("#4285F4")
-        binding.calendarColor.background = android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.OVAL
-            setColor(color)
+        lifecycleScope.launch {
+            val calendar = LocalCalendarRepository.getInstance().getCalendar(selectedCalendarId)
+            binding.calendarValue.text = calendar?.name ?: "Personal"
+            val color = calendar?.color ?: android.graphics.Color.parseColor("#4285F4")
+            binding.calendarColor.background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(color)
+            }
         }
     }
 
@@ -447,33 +465,35 @@ class EventModalFragment : BottomSheetDialogFragment() {
             return
         }
 
-        val rrule = if (repeatEnabled) buildRRule() else null
-        val duration = if (repeatEnabled) ICalEvent.toDurationString(endTime.timeInMillis - startTime.timeInMillis) else null
-        val calendarColor = LocalCalendarRepository.getInstance().getCalendar(selectedCalendarId)?.color 
-            ?: android.graphics.Color.parseColor("#4285F4")
+        lifecycleScope.launch {
+            val rrule = if (repeatEnabled) buildRRule() else null
+            val duration = if (repeatEnabled) ICalEvent.toDurationString(endTime.timeInMillis - startTime.timeInMillis) else null
+            val calendarColor = LocalCalendarRepository.getInstance().getCalendar(selectedCalendarId)?.color
+                ?: android.graphics.Color.parseColor("#4285F4")
 
-        val event = ICalEvent(
-            uid = existingEvent?.uid ?: UUID.randomUUID().toString(),
-            calendarId = selectedCalendarId,
-            summary = title,
-            description = binding.descriptionEditText.text.toString().trim(),
-            location = binding.locationEditText.text.toString().trim(),
-            dtStart = startTime.timeInMillis,
-            dtEnd = endTime.timeInMillis,
-            duration = duration,
-            allDay = isAllDay,
-            rrule = rrule,
-            exdate = existingEvent?.exdate,
-            color = calendarColor,
-            originalId = existingEvent?.originalId
-        )
+            val event = ICalEvent(
+                uid = existingEvent?.uid ?: UUID.randomUUID().toString(),
+                calendarId = selectedCalendarId,
+                summary = title,
+                description = binding.descriptionEditText.text.toString().trim(),
+                location = binding.locationEditText.text.toString().trim(),
+                dtStart = startTime.timeInMillis,
+                dtEnd = endTime.timeInMillis,
+                duration = duration,
+                allDay = isAllDay,
+                rrule = rrule,
+                exdate = existingEvent?.exdate,
+                color = calendarColor,
+                originalId = existingEvent?.originalId
+            )
 
-        // For recurring events being edited, show options
-        if (existingEvent?.isRecurring == true && instanceStartTime != null) {
-            showRecurringEditDialog(event)
-        } else {
-            onSaveListener?.invoke(event)
-            dismiss()
+            // For recurring events being edited, show options
+            if (existingEvent?.isRecurring == true && instanceStartTime != null) {
+                showRecurringEditDialog(event)
+            } else {
+                onSaveListener?.invoke(event)
+                dismiss()
+            }
         }
     }
 

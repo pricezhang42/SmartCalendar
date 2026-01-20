@@ -1,162 +1,222 @@
 package com.example.smartcalendar.data.repository
 
 import android.content.Context
-import android.content.SharedPreferences
+import com.example.smartcalendar.data.local.AppDatabase
+import com.example.smartcalendar.data.local.CalendarDao
+import com.example.smartcalendar.data.local.EventDao
 import com.example.smartcalendar.data.model.EventInstance
 import com.example.smartcalendar.data.model.ICalEvent
 import com.example.smartcalendar.data.model.LocalCalendar
+import com.example.smartcalendar.data.model.SyncStatus
 import com.example.smartcalendar.data.util.InstanceGenerator
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * Local calendar repository managing calendars and events with persistence.
+ * Local calendar repository using Room database.
+ * Manages calendars and events with sync support.
  */
-class LocalCalendarRepository private constructor() {
-    
-    // Calendars stored by ID
-    private val calendars = mutableMapOf<String, LocalCalendar>()
-    
-    // Events stored by UID for efficient lookup
-    private val events = mutableMapOf<String, ICalEvent>()
-    
+class LocalCalendarRepository private constructor(
+    private val calendarDao: CalendarDao,
+    private val eventDao: EventDao
+) {
+
     // Cached instances for current view range
     private var cachedInstances = listOf<EventInstance>()
     private var cacheRangeStart = 0L
     private var cacheRangeEnd = 0L
-    
-    private var prefs: SharedPreferences? = null
-    
-    companion object {
-        @Volatile
-        private var instance: LocalCalendarRepository? = null
-        private const val PREFS_NAME = "smartcalendar_data"
-        private const val KEY_EVENTS = "events"
-        private const val KEY_CALENDARS = "calendars"
-        
-        fun getInstance(): LocalCalendarRepository {
-            return instance ?: synchronized(this) {
-                instance ?: LocalCalendarRepository().also { instance = it }
-            }
-        }
-        
-        fun init(context: Context) {
-            getInstance().apply {
-                prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                loadFromStorage()
-                ensureDefaultCalendars()
-            }
-        }
-    }
-    
-    // ==================== Calendar Methods ====================
-    
-    fun getCalendars(): List<LocalCalendar> = calendars.values.toList()
-    
-    fun getCalendar(id: String): LocalCalendar? = calendars[id]
-    
-    fun getVisibleCalendars(): List<LocalCalendar> = calendars.values.filter { it.isVisible }
-    
-    fun getVisibleCalendarIds(): Set<String> = calendars.values.filter { it.isVisible }.map { it.id }.toSet()
-    
-    fun addCalendar(calendar: LocalCalendar): Boolean {
-        calendars[calendar.id] = calendar
-        saveToStorage()
-        return true
-    }
-    
-    fun updateCalendar(calendar: LocalCalendar): Boolean {
-        if (!calendars.containsKey(calendar.id)) return false
-        calendars[calendar.id] = calendar
-        invalidateCache()
-        saveToStorage()
-        return true
-    }
-    
-    fun deleteCalendar(id: String): Boolean {
-        val calendar = calendars[id] ?: return false
-        if (calendar.isDefault) return false // Cannot delete default calendars
-        
-        // Delete all events in this calendar
-        events.values.filter { it.calendarId == id }.forEach { events.remove(it.uid) }
-        calendars.remove(id)
-        invalidateCache()
-        saveToStorage()
-        return true
-    }
-    
-    fun setCalendarVisible(id: String, visible: Boolean): Boolean {
-        val calendar = calendars[id] ?: return false
-        calendars[id] = calendar.copy(isVisible = visible)
-        invalidateCache()
-        saveToStorage()
-        return true
-    }
-    
-    private fun ensureDefaultCalendars() {
-        if (calendars.isEmpty()) {
-            LocalCalendar.createDefault().forEach { calendars[it.id] = it }
-            saveToStorage()
-        }
-    }
-    
-    // ==================== Event Methods ====================
-    
-    fun getAllEvents(): List<ICalEvent> = events.values.toList()
-    
-    fun getEvent(uid: String): ICalEvent? = events[uid]
-    
-    fun addEvent(event: ICalEvent): Boolean {
-        events[event.uid] = event
-        invalidateCache()
-        saveToStorage()
-        return true
-    }
-    
-    fun updateEvent(event: ICalEvent): Boolean {
-        if (!events.containsKey(event.uid)) return false
-        events[event.uid] = event.copy(lastModified = System.currentTimeMillis())
-        invalidateCache()
-        saveToStorage()
-        return true
-    }
-    
-    fun deleteEvent(uid: String): Boolean {
-        val removed = events.remove(uid) != null
-        if (removed) {
+
+    // Current user ID - set after authentication
+    private var currentUserId: String = ""
+
+    fun setUserId(userId: String) {
+        if (currentUserId != userId) {
+            currentUserId = userId
             invalidateCache()
-            saveToStorage()
         }
-        return removed
     }
-    
-    fun addExceptionDate(uid: String, instanceTime: Long): Boolean {
-        val event = events[uid] ?: return false
-        if (!event.isRecurring) return false
-        
-        val dateFormat = java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US)
+
+    fun getUserId(): String = currentUserId
+
+    // ==================== Calendar Methods ====================
+
+    fun observeCalendars(): Flow<List<LocalCalendar>> = calendarDao.getCalendarsByUser(currentUserId)
+
+    suspend fun getCalendars(): List<LocalCalendar> = withContext(Dispatchers.IO) {
+        calendarDao.getCalendarsListByUser(currentUserId)
+    }
+
+    suspend fun getCalendar(id: String): LocalCalendar? = withContext(Dispatchers.IO) {
+        calendarDao.getCalendarById(id)
+    }
+
+    suspend fun getVisibleCalendars(): List<LocalCalendar> = withContext(Dispatchers.IO) {
+        calendarDao.getVisibleCalendars(currentUserId)
+    }
+
+    suspend fun getVisibleCalendarIds(): Set<String> = withContext(Dispatchers.IO) {
+        calendarDao.getVisibleCalendars(currentUserId).map { it.id }.toSet()
+    }
+
+    suspend fun addCalendar(calendar: LocalCalendar): Boolean = withContext(Dispatchers.IO) {
+        val calendarWithUser = calendar.copy(
+            userId = currentUserId,
+            syncStatus = SyncStatus.PENDING
+        )
+        calendarDao.insert(calendarWithUser)
+        true
+    }
+
+    suspend fun updateCalendar(calendar: LocalCalendar): Boolean = withContext(Dispatchers.IO) {
+        val existing = calendarDao.getCalendarById(calendar.id) ?: return@withContext false
+        val updated = calendar.copy(
+            userId = existing.userId,
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = SyncStatus.PENDING
+        )
+        calendarDao.update(updated)
+        invalidateCache()
+        true
+    }
+
+    suspend fun deleteCalendar(id: String): Boolean = withContext(Dispatchers.IO) {
+        val calendar = calendarDao.getCalendarById(id) ?: return@withContext false
+        if (calendar.isDefault) return@withContext false // Cannot delete default calendars
+
+        // Events are deleted automatically via CASCADE
+        calendarDao.deleteById(id)
+        invalidateCache()
+        true
+    }
+
+    suspend fun setCalendarVisible(id: String, visible: Boolean): Boolean = withContext(Dispatchers.IO) {
+        calendarDao.setVisibility(id, visible)
+        invalidateCache()
+        true
+    }
+
+    suspend fun ensureDefaultCalendars() = withContext(Dispatchers.IO) {
+        if (currentUserId.isEmpty()) return@withContext
+
+        // First, clean up any duplicate calendars
+        removeDuplicateCalendars()
+
+        val existingCalendars = calendarDao.getCalendarsListByUser(currentUserId)
+        val existingNames = existingCalendars.map { it.name }.toSet()
+
+        // Only create default calendars if they don't already exist by name
+        LocalCalendar.createDefault(currentUserId).forEach { defaultCalendar ->
+            if (defaultCalendar.name !in existingNames) {
+                calendarDao.insert(defaultCalendar)
+            }
+        }
+    }
+
+    private suspend fun removeDuplicateCalendars() = withContext(Dispatchers.IO) {
+        val calendars = calendarDao.getCalendarsListByUser(currentUserId)
+        val seen = mutableSetOf<String>()
+        val toDelete = mutableListOf<String>()
+
+        calendars.forEach { calendar ->
+            if (calendar.name in seen) {
+                // Mark duplicate for deletion
+                toDelete.add(calendar.id)
+            } else {
+                seen.add(calendar.name)
+            }
+        }
+
+        // Delete duplicates
+        toDelete.forEach { id ->
+            calendarDao.deleteById(id)
+        }
+
+        if (toDelete.isNotEmpty()) {
+            invalidateCache()
+        }
+    }
+
+    // ==================== Event Methods ====================
+
+    fun observeEvents(): Flow<List<ICalEvent>> = eventDao.getEventsByUser(currentUserId)
+
+    suspend fun getAllEvents(): List<ICalEvent> = withContext(Dispatchers.IO) {
+        eventDao.getEventsListByUser(currentUserId)
+    }
+
+    suspend fun getEvent(uid: String): ICalEvent? = withContext(Dispatchers.IO) {
+        eventDao.getEventById(uid)
+    }
+
+    suspend fun getEventsByCalendar(calendarId: String): List<ICalEvent> = withContext(Dispatchers.IO) {
+        eventDao.getEventsByCalendar(calendarId)
+    }
+
+    suspend fun addEvent(event: ICalEvent): Boolean = withContext(Dispatchers.IO) {
+        val eventWithUser = event.copy(
+            userId = currentUserId,
+            syncStatus = SyncStatus.PENDING
+        )
+        eventDao.insert(eventWithUser)
+        invalidateCache()
+        true
+    }
+
+    suspend fun updateEvent(event: ICalEvent): Boolean = withContext(Dispatchers.IO) {
+        val existing = eventDao.getEventById(event.uid) ?: return@withContext false
+        val updated = event.copy(
+            userId = existing.userId,
+            lastModified = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = SyncStatus.PENDING
+        )
+        eventDao.update(updated)
+        invalidateCache()
+        true
+    }
+
+    suspend fun deleteEvent(uid: String): Boolean = withContext(Dispatchers.IO) {
+        val event = eventDao.getEventById(uid) ?: return@withContext false
+        eventDao.delete(event)
+        invalidateCache()
+        true
+    }
+
+    suspend fun addExceptionDate(uid: String, instanceTime: Long): Boolean = withContext(Dispatchers.IO) {
+        val event = eventDao.getEventById(uid) ?: return@withContext false
+        if (!event.isRecurring) return@withContext false
+
+        val dateFormat = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US)
         dateFormat.timeZone = TimeZone.getTimeZone("UTC")
         val exdateStr = dateFormat.format(Date(instanceTime))
-        
+
         val newExdate = if (event.exdate.isNullOrEmpty()) exdateStr else "${event.exdate},$exdateStr"
-        
-        events[uid] = event.copy(exdate = newExdate, lastModified = System.currentTimeMillis())
+
+        val updated = event.copy(
+            exdate = newExdate,
+            lastModified = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = SyncStatus.PENDING
+        )
+        eventDao.update(updated)
         invalidateCache()
-        saveToStorage()
-        return true
+        true
     }
-    
-    fun endRecurrenceAtInstance(uid: String, instanceTime: Long): Boolean {
-        val event = events[uid] ?: return false
-        if (!event.isRecurring) return false
-        
+
+    suspend fun endRecurrenceAtInstance(uid: String, instanceTime: Long): Boolean = withContext(Dispatchers.IO) {
+        val event = eventDao.getEventById(uid) ?: return@withContext false
+        if (!event.isRecurring) return@withContext false
+
         val untilTime = instanceTime - 1000
-        val dateFormat = java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US)
+        val dateFormat = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US)
         dateFormat.timeZone = TimeZone.getTimeZone("UTC")
         val untilStr = dateFormat.format(Date(untilTime))
-        
-        val existingRrule = event.rrule ?: return false
+
+        val existingRrule = event.rrule ?: return@withContext false
         val newRrule = if (existingRrule.contains("UNTIL=") || existingRrule.contains("COUNT=")) {
             existingRrule
                 .replace(Regex("UNTIL=[^;]*"), "UNTIL=$untilStr")
@@ -164,152 +224,111 @@ class LocalCalendarRepository private constructor() {
         } else {
             "$existingRrule;UNTIL=$untilStr"
         }
-        
-        events[uid] = event.copy(rrule = newRrule, lastModified = System.currentTimeMillis())
+
+        val updated = event.copy(
+            rrule = newRrule,
+            lastModified = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = SyncStatus.PENDING
+        )
+        eventDao.update(updated)
         invalidateCache()
-        saveToStorage()
-        return true
+        true
     }
-    
+
     /**
      * Get instances filtered by visible calendars
      */
-    fun getInstances(startTime: Long, endTime: Long): List<EventInstance> {
+    suspend fun getInstances(startTime: Long, endTime: Long): List<EventInstance> = withContext(Dispatchers.IO) {
         if (startTime == cacheRangeStart && endTime == cacheRangeEnd && cachedInstances.isNotEmpty()) {
-            return cachedInstances
+            return@withContext cachedInstances
         }
-        
-        val visibleIds = getVisibleCalendarIds()
+
+        val visibleIds = getVisibleCalendarIds().toList()
+        if (visibleIds.isEmpty()) {
+            cachedInstances = emptyList()
+            return@withContext cachedInstances
+        }
+
         val allInstances = mutableListOf<EventInstance>()
-        
-        events.values
-            .filter { visibleIds.contains(it.calendarId) }
-            .forEach { event ->
-                allInstances.addAll(InstanceGenerator.generateInstances(event, startTime, endTime))
-            }
-        
+        val events = eventDao.getVisibleEvents(currentUserId, visibleIds)
+
+        events.forEach { event ->
+            allInstances.addAll(InstanceGenerator.generateInstances(event, startTime, endTime))
+        }
+
         cachedInstances = allInstances.sortedBy { it.startTime }
         cacheRangeStart = startTime
         cacheRangeEnd = endTime
-        
-        return cachedInstances
+
+        cachedInstances
     }
-    
-    fun findByOriginalId(originalId: Long): ICalEvent? = events.values.find { it.originalId == originalId }
-    
-    fun findByOriginalIdAndTitle(originalId: Long, title: String): ICalEvent? =
-        events.values.find { it.originalId == originalId && it.summary == title }
-    
-    fun clear() {
-        events.clear()
+
+    suspend fun findByOriginalId(originalId: Long): ICalEvent? = withContext(Dispatchers.IO) {
+        eventDao.getEventsListByUser(currentUserId).find { it.originalId == originalId }
+    }
+
+    suspend fun findByOriginalIdAndTitle(originalId: Long, title: String): ICalEvent? = withContext(Dispatchers.IO) {
+        eventDao.getEventsListByUser(currentUserId).find {
+            it.originalId == originalId && it.summary == title
+        }
+    }
+
+    suspend fun clear() = withContext(Dispatchers.IO) {
+        eventDao.deleteAllForUser(currentUserId)
         invalidateCache()
-        saveToStorage()
     }
-    
-    fun getEventCount(): Int = events.size
-    
-    private fun invalidateCache() {
+
+    suspend fun getEventCount(): Int = withContext(Dispatchers.IO) {
+        eventDao.getEventCount(currentUserId)
+    }
+
+    // ==================== Sync Methods ====================
+
+    suspend fun getPendingCalendars(): List<LocalCalendar> = withContext(Dispatchers.IO) {
+        calendarDao.getPendingSync()
+    }
+
+    suspend fun getPendingEvents(): List<ICalEvent> = withContext(Dispatchers.IO) {
+        eventDao.getPendingSync()
+    }
+
+    suspend fun markCalendarSynced(id: String) = withContext(Dispatchers.IO) {
+        calendarDao.updateSyncStatus(id, SyncStatus.SYNCED)
+    }
+
+    suspend fun markEventSynced(uid: String) = withContext(Dispatchers.IO) {
+        eventDao.updateSyncStatus(uid, SyncStatus.SYNCED)
+    }
+
+    // ==================== Cache Management ====================
+
+    fun invalidateCache() {
         cachedInstances = emptyList()
         cacheRangeStart = 0L
         cacheRangeEnd = 0L
     }
-    
-    // ==================== Persistence ====================
-    
-    private fun saveToStorage() {
-        val prefs = this.prefs ?: return
-        
-        // Save calendars
-        val calendarsJson = JSONArray()
-        calendars.values.forEach { calendarsJson.put(calendarToJson(it)) }
-        
-        // Save events
-        val eventsJson = JSONArray()
-        events.values.forEach { eventsJson.put(eventToJson(it)) }
-        
-        prefs.edit()
-            .putString(KEY_CALENDARS, calendarsJson.toString())
-            .putString(KEY_EVENTS, eventsJson.toString())
-            .apply()
-    }
-    
-    private fun loadFromStorage() {
-        val prefs = this.prefs ?: return
-        
-        // Load calendars
-        prefs.getString(KEY_CALENDARS, null)?.let { jsonStr ->
-            try {
-                val jsonArray = JSONArray(jsonStr)
-                for (i in 0 until jsonArray.length()) {
-                    val cal = jsonToCalendar(jsonArray.getJSONObject(i))
-                    calendars[cal.id] = cal
+
+    companion object {
+        @Volatile
+        private var instance: LocalCalendarRepository? = null
+
+        fun getInstance(context: Context): LocalCalendarRepository {
+            return instance ?: synchronized(this) {
+                instance ?: run {
+                    val database = AppDatabase.getInstance(context)
+                    LocalCalendarRepository(
+                        database.calendarDao(),
+                        database.eventDao()
+                    ).also { instance = it }
                 }
-            } catch (e: Exception) { e.printStackTrace() }
+            }
         }
-        
-        // Load events
-        prefs.getString(KEY_EVENTS, null)?.let { jsonStr ->
-            try {
-                val jsonArray = JSONArray(jsonStr)
-                for (i in 0 until jsonArray.length()) {
-                    val event = jsonToEvent(jsonArray.getJSONObject(i))
-                    events[event.uid] = event
-                }
-            } catch (e: Exception) { e.printStackTrace() }
+
+        fun getInstance(): LocalCalendarRepository {
+            return instance ?: throw IllegalStateException(
+                "LocalCalendarRepository not initialized. Call getInstance(context) first."
+            )
         }
     }
-    
-    private fun calendarToJson(cal: LocalCalendar) = JSONObject().apply {
-        put("id", cal.id)
-        put("name", cal.name)
-        put("color", cal.color)
-        put("isDefault", cal.isDefault)
-        put("isVisible", cal.isVisible)
-    }
-    
-    private fun jsonToCalendar(json: JSONObject) = LocalCalendar(
-        id = json.getString("id"),
-        name = json.getString("name"),
-        color = json.getInt("color"),
-        isDefault = json.optBoolean("isDefault", false),
-        isVisible = json.optBoolean("isVisible", true)
-    )
-    
-    private fun eventToJson(event: ICalEvent) = JSONObject().apply {
-        put("uid", event.uid)
-        put("calendarId", event.calendarId)
-        put("summary", event.summary)
-        put("description", event.description)
-        put("location", event.location)
-        put("dtStart", event.dtStart)
-        put("dtEnd", event.dtEnd)
-        put("duration", event.duration ?: "")
-        put("allDay", event.allDay)
-        put("rrule", event.rrule ?: "")
-        put("rdate", event.rdate ?: "")
-        put("exdate", event.exdate ?: "")
-        put("exrule", event.exrule ?: "")
-        put("color", event.color)
-        put("lastModified", event.lastModified)
-        put("originalId", event.originalId ?: 0L)
-    }
-    
-    private fun jsonToEvent(json: JSONObject) = ICalEvent(
-        uid = json.getString("uid"),
-        calendarId = json.optString("calendarId", "personal"),
-        summary = json.getString("summary"),
-        description = json.optString("description", ""),
-        location = json.optString("location", ""),
-        dtStart = json.getLong("dtStart"),
-        dtEnd = json.getLong("dtEnd"),
-        duration = json.optString("duration", "").ifEmpty { null },
-        allDay = json.optBoolean("allDay", false),
-        rrule = json.optString("rrule", "").ifEmpty { null },
-        rdate = json.optString("rdate", "").ifEmpty { null },
-        exdate = json.optString("exdate", "").ifEmpty { null },
-        exrule = json.optString("exrule", "").ifEmpty { null },
-        color = json.optInt("color", -0x1A8CFF),
-        lastModified = json.optLong("lastModified", System.currentTimeMillis()),
-        originalId = json.optLong("originalId", 0L).takeIf { it != 0L }
-    )
 }

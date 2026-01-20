@@ -12,6 +12,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
@@ -20,6 +21,8 @@ import com.example.smartcalendar.data.model.EventInstance
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentCalendarBinding
 import com.example.smartcalendar.databinding.ItemCalendarDayBinding
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -353,14 +356,14 @@ class CalendarFragment : Fragment() {
             start.add(Calendar.DAY_OF_MONTH, -7)
             start.set(Calendar.HOUR_OF_DAY, 0)
             start.set(Calendar.MINUTE, 0)
-            
+
             val end = calendar.clone() as Calendar
             end.set(Calendar.DAY_OF_MONTH, end.getActualMaximum(Calendar.DAY_OF_MONTH))
             end.add(Calendar.DAY_OF_MONTH, 7)
             end.set(Calendar.HOUR_OF_DAY, 23)
             end.set(Calendar.MINUTE, 59)
 
-            return repository.getInstances(start.timeInMillis, end.timeInMillis)
+            return runBlocking { repository.getInstances(start.timeInMillis, end.timeInMillis) }
         }
     }
 
@@ -398,7 +401,7 @@ class CalendarFragment : Fragment() {
             val weekStart = getWeekStart(calendar)
             val weekEnd = getWeekEnd(calendar)
             
-            val events = repository.getInstances(weekStart.timeInMillis, weekEnd.timeInMillis)
+            val events = runBlocking { repository.getInstances(weekStart.timeInMillis, weekEnd.timeInMillis) }
             val cal = weekStart.clone() as Calendar
 
             for (dayIndex in 0..6) {

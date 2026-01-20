@@ -11,12 +11,14 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.LocalCalendar
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentMineBinding
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
@@ -40,7 +42,7 @@ class MineFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         repository = LocalCalendarRepository.getInstance()
-        
+
         setupRecyclerView()
         binding.addCalendarButton.setOnClickListener { showAddCalendarDialog() }
     }
@@ -56,7 +58,9 @@ class MineFragment : Fragment() {
     }
 
     private fun refreshList() {
-        adapter.submitList(repository.getCalendars())
+        lifecycleScope.launch {
+            adapter.submitList(repository.getCalendars())
+        }
     }
 
     private fun showAddCalendarDialog() {
@@ -70,27 +74,27 @@ class MineFragment : Fragment() {
     private fun showCalendarDialog(existingCalendar: LocalCalendar?) {
         val context = requireContext()
         val isEdit = existingCalendar != null
-        
+
         val layout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 32, 48, 16)
         }
-        
+
         val nameInput = EditText(context).apply {
             hint = getString(R.string.calendar_name)
             setText(existingCalendar?.name ?: "")
         }
         layout.addView(nameInput)
-        
+
         // Color selection
         val colorLayout = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 32, 0, 0)
         }
-        
+
         var selectedColor = existingCalendar?.color ?: LocalCalendar.COLOR_BLUE
         val colorViews = mutableListOf<View>()
-        
+
         LocalCalendar.DEFAULT_COLORS.forEach { color ->
             val colorView = View(context).apply {
                 val size = (40 * resources.displayMetrics.density).toInt()
@@ -119,7 +123,7 @@ class MineFragment : Fragment() {
             colorLayout.addView(colorView)
         }
         layout.addView(colorLayout)
-        
+
         AlertDialog.Builder(context)
             .setTitle(if (isEdit) R.string.edit_calendar else R.string.add_calendar)
             .setView(layout)
@@ -129,17 +133,19 @@ class MineFragment : Fragment() {
                     Toast.makeText(context, "Name required", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                
-                if (isEdit) {
-                    repository.updateCalendar(existingCalendar!!.copy(name = name, color = selectedColor))
-                } else {
-                    repository.addCalendar(LocalCalendar(
-                        id = UUID.randomUUID().toString(),
-                        name = name,
-                        color = selectedColor
-                    ))
+
+                lifecycleScope.launch {
+                    if (isEdit) {
+                        repository.updateCalendar(existingCalendar!!.copy(name = name, color = selectedColor))
+                    } else {
+                        repository.addCalendar(LocalCalendar(
+                            id = UUID.randomUUID().toString(),
+                            name = name,
+                            color = selectedColor
+                        ))
+                    }
+                    refreshList()
                 }
-                refreshList()
             }
             .setNegativeButton("CANCEL", null)
             .show()
@@ -150,13 +156,15 @@ class MineFragment : Fragment() {
             Toast.makeText(context, "Cannot delete default calendars", Toast.LENGTH_SHORT).show()
             return
         }
-        
+
         AlertDialog.Builder(requireContext())
             .setTitle("Delete Calendar")
             .setMessage("Delete \"${calendar.name}\" and all its events?")
             .setPositiveButton("DELETE") { _, _ ->
-                repository.deleteCalendar(calendar.id)
-                refreshList()
+                lifecycleScope.launch {
+                    repository.deleteCalendar(calendar.id)
+                    refreshList()
+                }
             }
             .setNegativeButton("CANCEL", null)
             .show()
@@ -168,45 +176,45 @@ class MineFragment : Fragment() {
     }
 
     // =============== Adapter ===============
-    
+
     inner class CalendarAdapter(
         private val onEditClick: (LocalCalendar) -> Unit,
         private val onDeleteClick: (LocalCalendar) -> Unit
     ) : RecyclerView.Adapter<CalendarAdapter.ViewHolder>() {
-        
+
         private var calendars = listOf<LocalCalendar>()
-        
+
         fun submitList(list: List<LocalCalendar>) {
             calendars = list
             notifyDataSetChanged()
         }
-        
+
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
             val view = LayoutInflater.from(parent.context)
                 .inflate(android.R.layout.simple_list_item_2, parent, false)
             return ViewHolder(view)
         }
-        
+
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             holder.bind(calendars[position])
         }
-        
+
         override fun getItemCount() = calendars.size
-        
+
         inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
             private val text1 = itemView.findViewById<android.widget.TextView>(android.R.id.text1)
             private val text2 = itemView.findViewById<android.widget.TextView>(android.R.id.text2)
-            
+
             fun bind(calendar: LocalCalendar) {
                 text1.text = calendar.name
                 text1.setTextColor(calendar.color)
                 text2.text = if (calendar.isDefault) "Default" else "Custom"
                 text2.setTextColor(Color.GRAY)
-                
+
                 itemView.setOnClickListener { onEditClick(calendar) }
-                itemView.setOnLongClickListener { 
+                itemView.setOnLongClickListener {
                     onDeleteClick(calendar)
-                    true 
+                    true
                 }
             }
         }
