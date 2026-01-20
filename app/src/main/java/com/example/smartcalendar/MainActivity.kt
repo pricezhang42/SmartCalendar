@@ -21,6 +21,8 @@ import com.example.smartcalendar.data.repository.AuthRepository
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.data.sync.CalendarExporter
 import com.example.smartcalendar.data.sync.CalendarImporter
+import com.example.smartcalendar.data.sync.SyncManager
+import com.example.smartcalendar.data.sync.RealtimeSync
 import com.example.smartcalendar.databinding.ActivityMainBinding
 import com.example.smartcalendar.ui.auth.LoginActivity
 import com.example.smartcalendar.ui.calendar.CalendarFragment
@@ -35,6 +37,10 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
     private lateinit var authRepository: AuthRepository
     private lateinit var importer: CalendarImporter
     private lateinit var exporter: CalendarExporter
+    private lateinit var syncManager: SyncManager
+    private lateinit var realtimeSync: RealtimeSync
+
+    private var syncMenuItem: android.view.MenuItem? = null
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -71,15 +77,26 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         importer = CalendarImporter(this)
         exporter = CalendarExporter(this)
 
+        // Initialize sync managers
+        syncManager = SyncManager.getInstance(this)
+        realtimeSync = RealtimeSync.getInstance(this)
+
         // Ensure default calendars exist for user
         lifecycleScope.launch {
             localRepository.ensureDefaultCalendars()
             setupCalendarList()
+
+            // Start real-time sync
+            realtimeSync.startListening()
+
+            // Perform initial sync
+            performSync()
         }
 
         setupNavigation()
         setupDrawer()
         setupFab()
+        setupSyncStatusObserver()
         checkPermissions()
     }
 
@@ -373,6 +390,75 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
 
     override fun onEventClick(instance: EventInstance) {
         showEventModal(instance, instance.startTime)
+    }
+
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_main, menu)
+        syncMenuItem = menu.findItem(R.id.action_sync)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_sync -> {
+                performSync()
+                true
+            }
+            R.id.action_settings -> {
+                // TODO: Open settings
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    private fun performSync() {
+        lifecycleScope.launch {
+            val result = syncManager.sync()
+            result.onSuccess {
+                Toast.makeText(this@MainActivity, R.string.sync_success, Toast.LENGTH_SHORT).show()
+                refreshCalendar()
+            }.onFailure { error ->
+                Toast.makeText(
+                    this@MainActivity,
+                    getString(R.string.sync_error) + ": ${error.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    private fun setupSyncStatusObserver() {
+        lifecycleScope.launch {
+            syncManager.syncStatus.collect { status ->
+                when (status) {
+                    SyncManager.SyncState.SYNCING -> {
+                        syncMenuItem?.isEnabled = false
+                        syncMenuItem?.setIcon(android.R.drawable.ic_popup_sync)
+                        supportActionBar?.subtitle = getString(R.string.syncing)
+                    }
+                    SyncManager.SyncState.SUCCESS -> {
+                        syncMenuItem?.isEnabled = true
+                        supportActionBar?.subtitle = null
+                    }
+                    SyncManager.SyncState.ERROR -> {
+                        syncMenuItem?.isEnabled = true
+                        supportActionBar?.subtitle = null
+                    }
+                    SyncManager.SyncState.IDLE -> {
+                        syncMenuItem?.isEnabled = true
+                        supportActionBar?.subtitle = null
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        lifecycleScope.launch {
+            realtimeSync.stopListening()
+        }
     }
 
     override fun onBackPressed() {
