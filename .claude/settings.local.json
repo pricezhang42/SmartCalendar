@@ -8,7 +8,9 @@
       "Bash(adb logcat:*)",
       "Bash(.gradlew.bat assembleDebug:*)",
       "Bash(adb install:*)",
-      "Bash(adb shell:*)"
+      "Bash(adb shell:*)",
+      "Bash(./gradlew testDebugUnitTest:*)",
+      "Bash(./gradlew:*)"
     ]
   }
 }
