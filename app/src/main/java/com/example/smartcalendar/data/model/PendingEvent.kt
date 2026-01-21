@@ -35,6 +35,15 @@ enum class PendingOperation {
 }
 
 /**
+ * Scope for recurring event changes.
+ */
+enum class PendingRecurrenceScope {
+    THIS_INSTANCE,
+    THIS_AND_FOLLOWING,
+    ALL
+}
+
+/**
  * Represents an event extracted by AI, pending user review.
  */
 @Entity(tableName = "pending_events")
@@ -59,6 +68,8 @@ data class PendingEvent(
     val rawInput: String? = null,               // Original input text
     val operationType: PendingOperation = PendingOperation.CREATE,
     val targetEventId: String? = null,
+    val recurrenceScope: PendingRecurrenceScope? = null,
+    val instanceStartTime: Long? = null,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     /**

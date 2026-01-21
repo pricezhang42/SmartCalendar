@@ -11,6 +11,7 @@ import com.example.smartcalendar.data.model.InputType
 import com.example.smartcalendar.data.model.LocalCalendar
 import com.example.smartcalendar.data.model.PendingEvent
 import com.example.smartcalendar.data.model.PendingOperation
+import com.example.smartcalendar.data.model.PendingRecurrenceScope
 import com.example.smartcalendar.data.model.PendingStatus
 import com.example.smartcalendar.data.model.SyncStatus
 
@@ -20,7 +21,7 @@ import com.example.smartcalendar.data.model.SyncStatus
  */
 @Database(
     entities = [LocalCalendar::class, ICalEvent::class, PendingEvent::class],
-    version = 3,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -81,4 +82,12 @@ class Converters {
 
     @TypeConverter
     fun toPendingOperation(value: String): PendingOperation = PendingOperation.valueOf(value)
+
+    @TypeConverter
+    fun fromPendingRecurrenceScope(scope: PendingRecurrenceScope?): String? = scope?.name
+
+    @TypeConverter
+    fun toPendingRecurrenceScope(value: String?): PendingRecurrenceScope? {
+        return value?.let { PendingRecurrenceScope.valueOf(it) }
+    }
 }

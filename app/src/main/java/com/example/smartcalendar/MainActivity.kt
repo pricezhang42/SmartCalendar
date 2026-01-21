@@ -52,6 +52,15 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
         }
     }
 
+    private val aiAssistantLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            refreshCalendar()
+            setupCalendarList()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -249,7 +258,7 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
     }
 
     private fun openAIAssistant() {
-        startActivity(Intent(this, AIAssistantActivity::class.java))
+        aiAssistantLauncher.launch(Intent(this, AIAssistantActivity::class.java))
     }
 
     private fun checkPermissions() {

@@ -27,7 +27,9 @@ data class ExtractedEvent(
     val recurrence: String? = null,      // Natural language recurrence
     val confidence: Float = 0.0f,
     val action: AIAction = AIAction.CREATE,
-    val targetEventId: String? = null
+    val targetEventId: String? = null,
+    val scope: AIRecurrenceScope? = null,
+    val instanceDate: String? = null
 )
 
 @Serializable
@@ -35,6 +37,13 @@ enum class AIAction {
     CREATE,
     UPDATE,
     DELETE
+}
+
+@Serializable
+enum class AIRecurrenceScope {
+    THIS_INSTANCE,
+    THIS_AND_FOLLOWING,
+    ALL
 }
 
 @Serializable
@@ -46,6 +55,7 @@ data class CalendarContextEvent(
     val endTime: String?,
     val isAllDay: Boolean,
     val recurrence: String? = null,
+    val exdate: String? = null,
     val calendarName: String? = null
 )
 

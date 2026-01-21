@@ -17,6 +17,7 @@ import com.example.smartcalendar.data.model.EventInstance
 import com.example.smartcalendar.data.model.ICalEvent
 import com.example.smartcalendar.data.model.PendingEvent
 import com.example.smartcalendar.data.model.PendingOperation
+import com.example.smartcalendar.data.model.PendingRecurrenceScope
 import com.example.smartcalendar.data.model.PendingStatus
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentEventModalBinding
@@ -668,7 +669,14 @@ class EventModalFragment : BottomSheetDialogFragment() {
             isAllDay = isAllDay,
             recurrenceRule = rrule,
             status = PendingStatus.MODIFIED,
-            suggestedCalendarId = selectedCalendarId
+            suggestedCalendarId = selectedCalendarId,
+            instanceStartTime = if (original.recurrenceScope == PendingRecurrenceScope.THIS_INSTANCE ||
+                original.recurrenceScope == PendingRecurrenceScope.THIS_AND_FOLLOWING
+            ) {
+                startTime.timeInMillis
+            } else {
+                original.instanceStartTime
+            }
         )
 
         onPendingEventSave?.invoke(updated)

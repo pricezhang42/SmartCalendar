@@ -6,6 +6,7 @@ import com.example.smartcalendar.data.local.AppDatabase
 import com.example.smartcalendar.data.model.InputType
 import com.example.smartcalendar.data.model.PendingEvent
 import com.example.smartcalendar.data.model.PendingOperation
+import com.example.smartcalendar.data.model.PendingRecurrenceScope
 import com.example.smartcalendar.data.model.PendingStatus
 import com.example.smartcalendar.data.model.ICalEvent
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
@@ -77,12 +78,19 @@ class AICalendarAssistant private constructor(
                             ?: return@mapNotNull null
                         val existing = calendarRepository.getEvent(targetId)
                             ?: return@mapNotNull null
-                        val merged = mergeWithExisting(extracted, existing)
+                        val scope = determineRecurrenceScope(extracted, existing)
+                        val normalized = normalizeExtractedForScope(extracted, scope)
+                        val merged = mergeWithExisting(normalized, existing)
                         val operation = if (action == AIAction.DELETE) {
                             PendingOperation.DELETE
                         } else {
                             PendingOperation.UPDATE
                         }
+                        val instanceStartTime = resolveInstanceStartTime(
+                            normalized,
+                            existing,
+                            scope
+                        )
                         convertToPendingEvent(
                             merged,
                             sessionId,
@@ -91,7 +99,9 @@ class AICalendarAssistant private constructor(
                             InputType.TEXT,
                             operation,
                             existing.uid,
-                            existing.calendarId
+                            existing.calendarId,
+                            scope,
+                            instanceStartTime
                         )
                     } else {
                         convertToPendingEvent(
@@ -101,6 +111,8 @@ class AICalendarAssistant private constructor(
                             text,
                             InputType.TEXT,
                             PendingOperation.CREATE,
+                            null,
+                            null,
                             null,
                             null
                         )
@@ -169,18 +181,17 @@ class AICalendarAssistant private constructor(
                         ?: return@withContext Result.failure(Exception("Missing target event id"))
                     val existing = calendarRepository.getEvent(targetId)
                         ?: return@withContext Result.failure(Exception("Target event not found"))
-                    val updated = mergePendingIntoExisting(existing, event, calendarId, color)
-                    calendarRepository.updateEvent(updated)
+                    val resultUid = applyRecurringUpdate(calendarRepository, existing, event, calendarId, color)
                     pendingEventDao.updateStatus(event.id, PendingStatus.APPROVED)
-                    Log.d(TAG, "Updated event: ${updated.summary} -> ${updated.uid}")
-                    Result.success(updated.uid)
+                    Result.success(resultUid)
                 }
                 PendingOperation.DELETE -> {
                     val targetId = event.targetEventId
                         ?: return@withContext Result.failure(Exception("Missing target event id"))
-                    calendarRepository.deleteEvent(targetId)
+                    val existing = calendarRepository.getEvent(targetId)
+                        ?: return@withContext Result.failure(Exception("Target event not found"))
+                    applyRecurringDelete(calendarRepository, existing, event)
                     pendingEventDao.updateStatus(event.id, PendingStatus.APPROVED)
-                    Log.d(TAG, "Deleted event: $targetId")
                     Result.success(targetId)
                 }
             }
@@ -219,12 +230,12 @@ class AICalendarAssistant private constructor(
                     PendingOperation.UPDATE -> {
                         val targetId = event.targetEventId ?: return@forEach
                         val existing = calendarRepository.getEvent(targetId) ?: return@forEach
-                        val updated = mergePendingIntoExisting(existing, event, calendarId, color)
-                        calendarRepository.updateEvent(updated)
+                        applyRecurringUpdate(calendarRepository, existing, event, calendarId, color)
                     }
                     PendingOperation.DELETE -> {
                         val targetId = event.targetEventId ?: return@forEach
-                        calendarRepository.deleteEvent(targetId)
+                        val existing = calendarRepository.getEvent(targetId) ?: return@forEach
+                        applyRecurringDelete(calendarRepository, existing, event)
                     }
                 }
             }
@@ -278,7 +289,9 @@ class AICalendarAssistant private constructor(
         inputType: InputType,
         operationType: PendingOperation,
         targetEventId: String?,
-        suggestedCalendarId: String?
+        suggestedCalendarId: String?,
+        recurrenceScope: PendingRecurrenceScope?,
+        instanceStartTime: Long?
     ): PendingEvent {
         val (startTime, endTime) = parseEventTimes(extracted)
 
@@ -297,7 +310,9 @@ class AICalendarAssistant private constructor(
             rawInput = rawInput,
             operationType = operationType,
             targetEventId = targetEventId,
-            suggestedCalendarId = suggestedCalendarId
+            suggestedCalendarId = suggestedCalendarId,
+            recurrenceScope = recurrenceScope,
+            instanceStartTime = instanceStartTime
         )
     }
 
@@ -399,6 +414,7 @@ class AICalendarAssistant private constructor(
                     endTime = if (event.allDay) null else timeFormat.format(Date(event.dtEnd)),
                     isAllDay = event.allDay,
                     recurrence = event.rrule,
+                    exdate = event.exdate,
                     calendarName = calendars[event.calendarId]?.name
                 )
             }
@@ -421,6 +437,58 @@ class AICalendarAssistant private constructor(
             recurrence = extracted.recurrence ?: existing.rrule,
             targetEventId = existing.uid
         )
+    }
+
+    private fun determineRecurrenceScope(
+        extracted: ExtractedEvent,
+        existing: ICalEvent
+    ): PendingRecurrenceScope? {
+        if (!existing.isRecurring) return null
+        extracted.scope?.let { scope ->
+            return when (scope) {
+                AIRecurrenceScope.THIS_INSTANCE -> PendingRecurrenceScope.THIS_INSTANCE
+                AIRecurrenceScope.THIS_AND_FOLLOWING -> PendingRecurrenceScope.THIS_AND_FOLLOWING
+                AIRecurrenceScope.ALL -> PendingRecurrenceScope.ALL
+            }
+        }
+        if (!extracted.recurrence.isNullOrBlank()) {
+            return PendingRecurrenceScope.ALL
+        }
+        if (!extracted.instanceDate.isNullOrBlank() ||
+            !extracted.date.isNullOrBlank() ||
+            !extracted.startTime.isNullOrBlank() ||
+            !extracted.endTime.isNullOrBlank()
+        ) {
+            return PendingRecurrenceScope.THIS_INSTANCE
+        }
+        return PendingRecurrenceScope.ALL
+    }
+
+    private fun normalizeExtractedForScope(
+        extracted: ExtractedEvent,
+        scope: PendingRecurrenceScope?
+    ): ExtractedEvent {
+        if (scope == null) return extracted
+        return when (scope) {
+            PendingRecurrenceScope.THIS_INSTANCE -> extracted.copy(recurrence = null)
+            PendingRecurrenceScope.THIS_AND_FOLLOWING -> extracted
+            PendingRecurrenceScope.ALL -> extracted
+        }
+    }
+
+    private fun resolveInstanceStartTime(
+        extracted: ExtractedEvent,
+        existing: ICalEvent,
+        scope: PendingRecurrenceScope?
+    ): Long? {
+        if (scope == null || scope == PendingRecurrenceScope.ALL) return null
+        val instanceDate = extracted.instanceDate ?: extracted.date
+        if (instanceDate.isNullOrBlank()) {
+            return existing.dtStart
+        }
+        val dateWithInstance = extracted.copy(date = instanceDate)
+        val (startTime, _) = parseEventTimes(dateWithInstance)
+        return startTime ?: existing.dtStart
     }
 
     /**
@@ -490,5 +558,79 @@ class AICalendarAssistant private constructor(
             updatedAt = System.currentTimeMillis(),
             syncStatus = com.example.smartcalendar.data.model.SyncStatus.PENDING
         )
+    }
+
+    private suspend fun applyRecurringUpdate(
+        calendarRepository: LocalCalendarRepository,
+        existing: ICalEvent,
+        pending: PendingEvent,
+        calendarId: String,
+        color: Int
+    ): String {
+        if (!existing.isRecurring || pending.recurrenceScope == null || pending.recurrenceScope == PendingRecurrenceScope.ALL) {
+            val updated = mergePendingIntoExisting(existing, pending, calendarId, color)
+            calendarRepository.updateEvent(updated)
+            Log.d(TAG, "Updated event: ${updated.summary} -> ${updated.uid}")
+            return updated.uid
+        }
+
+        val instanceTime = pending.instanceStartTime ?: existing.dtStart
+        return when (pending.recurrenceScope) {
+            PendingRecurrenceScope.THIS_INSTANCE -> {
+                calendarRepository.addExceptionDate(existing.uid, instanceTime)
+                val single = pending.toICalEvent(calendarId, color).copy(rrule = null, duration = null)
+                calendarRepository.addEvent(single)
+                Log.d(TAG, "Updated single instance: ${single.summary} -> ${single.uid}")
+                single.uid
+            }
+            PendingRecurrenceScope.THIS_AND_FOLLOWING -> {
+                calendarRepository.endRecurrenceAtInstance(existing.uid, instanceTime)
+                val duration = ICalEvent.toDurationString(
+                    (pending.endTime ?: (pending.startTime ?: instanceTime + 3600000L)) -
+                        (pending.startTime ?: instanceTime)
+                )
+                val newSeries = pending.toICalEvent(calendarId, color).copy(
+                    rrule = pending.recurrenceRule ?: existing.rrule,
+                    duration = duration
+                )
+                calendarRepository.addEvent(newSeries)
+                Log.d(TAG, "Updated series from instance: ${newSeries.summary} -> ${newSeries.uid}")
+                newSeries.uid
+            }
+            PendingRecurrenceScope.ALL -> {
+                val updated = mergePendingIntoExisting(existing, pending, calendarId, color)
+                calendarRepository.updateEvent(updated)
+                Log.d(TAG, "Updated event: ${updated.summary} -> ${updated.uid}")
+                updated.uid
+            }
+        }
+    }
+
+    private suspend fun applyRecurringDelete(
+        calendarRepository: LocalCalendarRepository,
+        existing: ICalEvent,
+        pending: PendingEvent
+    ) {
+        if (!existing.isRecurring || pending.recurrenceScope == null || pending.recurrenceScope == PendingRecurrenceScope.ALL) {
+            calendarRepository.deleteEvent(existing.uid)
+            Log.d(TAG, "Deleted event: ${existing.uid}")
+            return
+        }
+
+        val instanceTime = pending.instanceStartTime ?: existing.dtStart
+        when (pending.recurrenceScope) {
+            PendingRecurrenceScope.THIS_INSTANCE -> {
+                calendarRepository.addExceptionDate(existing.uid, instanceTime)
+                Log.d(TAG, "Deleted single instance for event: ${existing.uid}")
+            }
+            PendingRecurrenceScope.THIS_AND_FOLLOWING -> {
+                calendarRepository.endRecurrenceAtInstance(existing.uid, instanceTime)
+                Log.d(TAG, "Deleted instances from date for event: ${existing.uid}")
+            }
+            PendingRecurrenceScope.ALL -> {
+                calendarRepository.deleteEvent(existing.uid)
+                Log.d(TAG, "Deleted event: ${existing.uid}")
+            }
+        }
     }
 }

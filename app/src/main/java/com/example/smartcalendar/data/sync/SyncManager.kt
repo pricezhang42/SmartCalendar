@@ -213,11 +213,15 @@ class SyncManager private constructor(private val context: Context) {
      */
     private suspend fun syncEvents(userId: String) {
         // Get all local events
-        val localEvents = localRepo.getAllEvents()
+        val localEvents = localRepo.getAllEventsIncludingDeleted()
 
         // Push local pending/deleted events to cloud
-        val pendingEvents = localEvents.filter { it.syncStatus == SyncStatus.PENDING }
-        val deletedEvents = localEvents.filter { it.syncStatus == SyncStatus.DELETED }
+        val pendingEvents = localEvents.filter {
+            it.syncStatus == SyncStatus.PENDING && !it.deleted
+        }
+        val deletedEvents = localEvents.filter {
+            it.deleted || it.syncStatus == SyncStatus.DELETED
+        }
 
         if (pendingEvents.isNotEmpty()) {
             Log.d(TAG, "Pushing ${pendingEvents.size} pending events to cloud")
@@ -233,7 +237,7 @@ class SyncManager private constructor(private val context: Context) {
             Log.d(TAG, "Deleting ${deletedEvents.size} events from cloud")
             deletedEvents.forEach { event ->
                 supabaseRepo.deleteEvent(event.uid)
-                localRepo.deleteEvent(event.uid)
+                localRepo.purgeEvent(event.uid)
             }
         }
 
@@ -248,7 +252,7 @@ class SyncManager private constructor(private val context: Context) {
             if (localEvent == null) {
                 // New event from cloud - insert locally
                 localRepo.addEvent(remoteEvent.copy(syncStatus = SyncStatus.SYNCED))
-            } else if (localEvent.syncStatus != SyncStatus.DELETED) {
+            } else if (!localEvent.deleted && localEvent.syncStatus != SyncStatus.DELETED) {
                 // Event exists - check for conflicts
                 if (remoteEvent.lastModified > localEvent.lastModified) {
                     // Remote is newer - update local
@@ -314,7 +318,7 @@ class SyncManager private constructor(private val context: Context) {
     suspend fun deleteEvent(eventUid: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             supabaseRepo.deleteEvent(eventUid).getOrThrow()
-            localRepo.deleteEvent(eventUid)
+            localRepo.purgeEvent(eventUid)
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to delete event: ${e.message}", e)

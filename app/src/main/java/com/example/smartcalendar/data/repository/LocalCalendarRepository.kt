@@ -148,6 +148,10 @@ class LocalCalendarRepository private constructor(
         eventDao.getEventsListByUser(currentUserId)
     }
 
+    suspend fun getAllEventsIncludingDeleted(): List<ICalEvent> = withContext(Dispatchers.IO) {
+        eventDao.getEventsListByUserIncludingDeleted(currentUserId)
+    }
+
     suspend fun getEvent(uid: String): ICalEvent? = withContext(Dispatchers.IO) {
         eventDao.getEventById(uid)
     }
@@ -180,6 +184,19 @@ class LocalCalendarRepository private constructor(
     }
 
     suspend fun deleteEvent(uid: String): Boolean = withContext(Dispatchers.IO) {
+        val event = eventDao.getEventById(uid) ?: return@withContext false
+        val updated = event.copy(
+            deleted = true,
+            lastModified = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = SyncStatus.DELETED
+        )
+        eventDao.update(updated)
+        invalidateCache()
+        true
+    }
+
+    suspend fun purgeEvent(uid: String): Boolean = withContext(Dispatchers.IO) {
         val event = eventDao.getEventById(uid) ?: return@withContext false
         eventDao.delete(event)
         invalidateCache()

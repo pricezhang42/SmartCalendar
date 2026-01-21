@@ -13,6 +13,7 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.util.concurrent.TimeUnit
 
 /**
  * AI service implementation using Google Gemini.
@@ -38,6 +39,14 @@ class GeminiProvider : AIService {
     private val httpClient by lazy {
         HttpClient(OkHttp) {
             expectSuccess = false
+            engine {
+                config {
+                    callTimeout(30, TimeUnit.SECONDS)
+                    connectTimeout(15, TimeUnit.SECONDS)
+                    readTimeout(30, TimeUnit.SECONDS)
+                    writeTimeout(30, TimeUnit.SECONDS)
+                }
+            }
         }
     }
 
@@ -129,6 +138,8 @@ Instructions:
 7. If the user is modifying or deleting existing events, set action to UPDATE or DELETE
 8. For UPDATE/DELETE, set targetEventId to the matching id from calendar context
 9. For UPDATE, change date/time fields instead of adding phrases like "postponed" to description
+10. For recurring events, set scope to THIS_INSTANCE, THIS_AND_FOLLOWING, or ALL
+11. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
 {
@@ -144,7 +155,9 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
       "recurrence": "Natural language recurrence or null",
       "confidence": 0.95,
       "action": "CREATE|UPDATE|DELETE",
-      "targetEventId": "required when UPDATE or DELETE"
+      "targetEventId": "required when UPDATE or DELETE",
+      "scope": "THIS_INSTANCE|THIS_AND_FOLLOWING|ALL",
+      "instanceDate": "required for recurring updates/deletes on a specific date"
     }
   ]
 }

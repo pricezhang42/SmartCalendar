@@ -33,7 +33,7 @@ class OfflineSyncQueue private constructor(context: Context) {
      */
     suspend fun getPendingEventCount(): Int = withContext(Dispatchers.IO) {
         try {
-            val events = localRepo.getAllEvents()
+            val events = localRepo.getAllEventsIncludingDeleted()
             events.count { it.syncStatus == SyncStatus.PENDING || it.syncStatus == SyncStatus.DELETED }
         } catch (e: Exception) {
             Log.e(TAG, "Error getting pending event count: ${e.message}")
@@ -88,10 +88,7 @@ class OfflineSyncQueue private constructor(context: Context) {
      */
     suspend fun markEventDeleted(eventUid: String) = withContext(Dispatchers.IO) {
         try {
-            val event = localRepo.getEvent(eventUid)
-            event?.let {
-                localRepo.updateEvent(it.copy(syncStatus = SyncStatus.DELETED))
-            }
+            localRepo.deleteEvent(eventUid)
         } catch (e: Exception) {
             Log.e(TAG, "Error marking event deleted: ${e.message}")
         }

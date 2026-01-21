@@ -13,28 +13,31 @@ interface EventDao {
     
     // ===== Queries =====
     
-    @Query("SELECT * FROM events WHERE userId = :userId ORDER BY dtStart")
+    @Query("SELECT * FROM events WHERE userId = :userId AND deleted = 0 ORDER BY dtStart")
     fun getEventsByUser(userId: String): Flow<List<ICalEvent>>
     
-    @Query("SELECT * FROM events WHERE userId = :userId")
+    @Query("SELECT * FROM events WHERE userId = :userId AND deleted = 0")
     suspend fun getEventsListByUser(userId: String): List<ICalEvent>
+
+    @Query("SELECT * FROM events WHERE userId = :userId")
+    suspend fun getEventsListByUserIncludingDeleted(userId: String): List<ICalEvent>
     
     @Query("SELECT * FROM events WHERE uid = :uid")
     suspend fun getEventById(uid: String): ICalEvent?
     
-    @Query("SELECT * FROM events WHERE calendarId = :calendarId ORDER BY dtStart")
+    @Query("SELECT * FROM events WHERE calendarId = :calendarId AND deleted = 0 ORDER BY dtStart")
     suspend fun getEventsByCalendar(calendarId: String): List<ICalEvent>
     
-    @Query("SELECT * FROM events WHERE userId = :userId AND calendarId IN (:visibleCalendarIds) ORDER BY dtStart")
+    @Query("SELECT * FROM events WHERE userId = :userId AND calendarId IN (:visibleCalendarIds) AND deleted = 0 ORDER BY dtStart")
     suspend fun getVisibleEvents(userId: String, visibleCalendarIds: List<String>): List<ICalEvent>
     
     @Query("SELECT * FROM events WHERE syncStatus != :synced")
     suspend fun getPendingSync(synced: SyncStatus = SyncStatus.SYNCED): List<ICalEvent>
     
-    @Query("SELECT COUNT(*) FROM events WHERE userId = :userId")
+    @Query("SELECT COUNT(*) FROM events WHERE userId = :userId AND deleted = 0")
     suspend fun getEventCount(userId: String): Int
     
-    @Query("SELECT * FROM events WHERE userId = :userId AND dtStart >= :startTime AND dtStart <= :endTime")
+    @Query("SELECT * FROM events WHERE userId = :userId AND deleted = 0 AND dtStart >= :startTime AND dtStart <= :endTime")
     suspend fun getEventsInRange(userId: String, startTime: Long, endTime: Long): List<ICalEvent>
     
     // ===== Insert/Update =====

@@ -41,6 +41,7 @@ data class ICalEvent(
     val exdate: String? = null,
     val exrule: String? = null,
     val color: Int = -0x1A8CFF, // Default blue
+    val deleted: Boolean = false,
     val lastModified: Long = System.currentTimeMillis(),
     val originalId: Long? = null, // For tracking imported events
     val createdAt: Long = System.currentTimeMillis(),
