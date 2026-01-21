@@ -134,6 +134,11 @@
     <string name="ai_reject_all">Cancel</string>
     <string name="ai_confidence">%d%% confidence</string>
     <string name="ai_tap_to_edit">Tap to edit</string>
+    <string name="ai_tap_to_review">Tap to review</string>
+    <string name="ai_action_create">Create</string>
+    <string name="ai_action_update">Update</string>
+    <string name="ai_action_delete">Delete</string>
+    <string name="close">Close</string>
     <string name="ai_event_approved">Event added to calendar</string>
     <string name="ai_events_approved">%d events added to calendar</string>
     <string name="ai_changed_field">AI suggested</string>

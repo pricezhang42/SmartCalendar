@@ -9,12 +9,14 @@ interface AIService {
      * @param text The user's text input (natural language)
      * @param currentDate Current date string in YYYY-MM-DD format for relative date parsing
      * @param timezone User's timezone (e.g., "America/New_York")
+     * @param calendarContext Optional list of calendar events for updates/deletes
      * @return ProcessingResult with extracted events or error
      */
     suspend fun parseText(
         text: String,
         currentDate: String,
-        timezone: String
+        timezone: String,
+        calendarContext: List<CalendarContextEvent>? = null
     ): ProcessingResult
 
     /**

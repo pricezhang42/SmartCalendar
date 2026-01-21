@@ -23,9 +23,30 @@ data class ExtractedEvent(
     val date: String? = null,           // YYYY-MM-DD format
     val startTime: String? = null,       // HH:MM format (24h)
     val endTime: String? = null,         // HH:MM format (24h)
-    val isAllDay: Boolean = false,
+    val isAllDay: Boolean? = null,
     val recurrence: String? = null,      // Natural language recurrence
-    val confidence: Float = 0.0f
+    val confidence: Float = 0.0f,
+    val action: AIAction = AIAction.CREATE,
+    val targetEventId: String? = null
+)
+
+@Serializable
+enum class AIAction {
+    CREATE,
+    UPDATE,
+    DELETE
+}
+
+@Serializable
+data class CalendarContextEvent(
+    val id: String,
+    val title: String,
+    val date: String,
+    val startTime: String?,
+    val endTime: String?,
+    val isAllDay: Boolean,
+    val recurrence: String? = null,
+    val calendarName: String? = null
 )
 
 /**

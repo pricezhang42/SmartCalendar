@@ -10,6 +10,7 @@ import com.example.smartcalendar.data.model.ICalEvent
 import com.example.smartcalendar.data.model.InputType
 import com.example.smartcalendar.data.model.LocalCalendar
 import com.example.smartcalendar.data.model.PendingEvent
+import com.example.smartcalendar.data.model.PendingOperation
 import com.example.smartcalendar.data.model.PendingStatus
 import com.example.smartcalendar.data.model.SyncStatus
 
@@ -19,7 +20,7 @@ import com.example.smartcalendar.data.model.SyncStatus
  */
 @Database(
     entities = [LocalCalendar::class, ICalEvent::class, PendingEvent::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -74,4 +75,10 @@ class Converters {
 
     @TypeConverter
     fun toInputType(value: String): InputType = InputType.valueOf(value)
+
+    @TypeConverter
+    fun fromPendingOperation(operation: PendingOperation): String = operation.name
+
+    @TypeConverter
+    fun toPendingOperation(value: String): PendingOperation = PendingOperation.valueOf(value)
 }

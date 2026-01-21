@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.PendingEvent
+import com.example.smartcalendar.data.model.PendingOperation
 import com.example.smartcalendar.databinding.ItemPendingEventBinding
 import java.text.SimpleDateFormat
 import java.util.*
@@ -43,6 +44,26 @@ class PendingEventAdapter(
 
         fun bind(event: PendingEvent) {
             binding.eventTitle.text = event.title
+            binding.actionText.text = when (event.operationType) {
+                PendingOperation.CREATE -> binding.root.context.getString(R.string.ai_action_create)
+                PendingOperation.UPDATE -> binding.root.context.getString(R.string.ai_action_update)
+                PendingOperation.DELETE -> binding.root.context.getString(R.string.ai_action_delete)
+            }
+
+            val actionColor = when (event.operationType) {
+                PendingOperation.CREATE -> ContextCompat.getColor(binding.root.context, R.color.primary_blue)
+                PendingOperation.UPDATE -> ContextCompat.getColor(binding.root.context, R.color.ai_confidence_medium)
+                PendingOperation.DELETE -> ContextCompat.getColor(binding.root.context, R.color.ai_confidence_low)
+            }
+            (binding.actionText.background as? GradientDrawable)?.setColor(actionColor)
+                ?: run {
+                    val drawable = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = 16f * binding.root.context.resources.displayMetrics.density
+                        setColor(actionColor)
+                    }
+                    binding.actionText.background = drawable
+                }
 
             // Format date/time
             val dateTimeText = formatDateTime(event)
@@ -88,6 +109,12 @@ class PendingEventAdapter(
             // Click listener
             binding.eventCard.setOnClickListener {
                 onEventClick(event)
+            }
+
+            if (event.operationType == PendingOperation.DELETE) {
+                binding.editHintText.text = binding.root.context.getString(R.string.ai_tap_to_review)
+            } else {
+                binding.editHintText.text = binding.root.context.getString(R.string.ai_tap_to_edit)
             }
         }
 

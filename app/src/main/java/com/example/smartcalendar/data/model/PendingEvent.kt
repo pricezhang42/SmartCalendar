@@ -26,6 +26,15 @@ enum class InputType {
 }
 
 /**
+ * Type of operation requested by AI.
+ */
+enum class PendingOperation {
+    CREATE,
+    UPDATE,
+    DELETE
+}
+
+/**
  * Represents an event extracted by AI, pending user review.
  */
 @Entity(tableName = "pending_events")
@@ -48,6 +57,8 @@ data class PendingEvent(
     val suggestedColor: Int? = null,
     val sourceType: InputType = InputType.TEXT,
     val rawInput: String? = null,               // Original input text
+    val operationType: PendingOperation = PendingOperation.CREATE,
+    val targetEventId: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     /**

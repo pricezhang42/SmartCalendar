@@ -16,6 +16,7 @@ import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.EventInstance
 import com.example.smartcalendar.data.model.ICalEvent
 import com.example.smartcalendar.data.model.PendingEvent
+import com.example.smartcalendar.data.model.PendingOperation
 import com.example.smartcalendar.data.model.PendingStatus
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentEventModalBinding
@@ -265,6 +266,22 @@ class EventModalFragment : BottomSheetDialogFragment() {
         setupDayOfWeekChips()
         updateRepeatEndUI()
         updateCalendarDisplay()
+
+        if (event.operationType == PendingOperation.DELETE) {
+            binding.modalTitle.text = getString(R.string.ai_action_delete)
+            binding.saveButton.text = getString(R.string.close)
+            binding.titleEditText.isEnabled = false
+            binding.descriptionEditText.isEnabled = false
+            binding.locationEditText.isEnabled = false
+            binding.dateValue.isEnabled = false
+            binding.startTimeValue.isEnabled = false
+            binding.endTimeValue.isEnabled = false
+            binding.calendarRow.isEnabled = false
+            binding.allDaySwitch.isEnabled = false
+            binding.repeatSwitch.isEnabled = false
+            binding.repeatOptionsContainer.visibility = View.GONE
+            binding.reminderRow.isEnabled = false
+        }
     }
 
     /**
@@ -636,6 +653,10 @@ class EventModalFragment : BottomSheetDialogFragment() {
      */
     private fun savePendingEvent(title: String) {
         val original = pendingEvent ?: return
+        if (original.operationType == PendingOperation.DELETE) {
+            dismiss()
+            return
+        }
         val rrule = if (repeatEnabled) buildRRule() else null
 
         val updated = original.copy(

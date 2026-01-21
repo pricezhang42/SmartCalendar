@@ -5,7 +5,9 @@ import android.util.Log
 import com.example.smartcalendar.data.local.AppDatabase
 import com.example.smartcalendar.data.model.InputType
 import com.example.smartcalendar.data.model.PendingEvent
+import com.example.smartcalendar.data.model.PendingOperation
 import com.example.smartcalendar.data.model.PendingStatus
+import com.example.smartcalendar.data.model.ICalEvent
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -52,16 +54,61 @@ class AICalendarAssistant private constructor(
 
         val currentDate = dateFormat.format(Date())
         val timezone = TimeZone.getDefault().id
+        val calendarRepository = LocalCalendarRepository.getInstance(context)
+        calendarRepository.setUserId(userId)
 
-        when (val result = aiService.parseText(text, currentDate, timezone)) {
+        val calendarContext = if (shouldIncludeCalendarContext(text)) {
+            buildCalendarContext(calendarRepository)
+        } else {
+            null
+        }
+
+        when (val result = aiService.parseText(text, currentDate, timezone, calendarContext)) {
             is ProcessingResult.Success -> {
                 if (result.response.events.isEmpty()) {
                     return@withContext Result.failure(Exception("No events found in the input"))
                 }
 
                 val sessionId = UUID.randomUUID().toString()
-                val pendingEvents = result.response.events.map { extracted ->
-                    convertToPendingEvent(extracted, sessionId, userId, text, InputType.TEXT)
+                val pendingEvents = result.response.events.mapNotNull { extracted ->
+                    val action = extracted.action
+                    if (action == AIAction.UPDATE || action == AIAction.DELETE) {
+                        val targetId = extracted.targetEventId
+                            ?: return@mapNotNull null
+                        val existing = calendarRepository.getEvent(targetId)
+                            ?: return@mapNotNull null
+                        val merged = mergeWithExisting(extracted, existing)
+                        val operation = if (action == AIAction.DELETE) {
+                            PendingOperation.DELETE
+                        } else {
+                            PendingOperation.UPDATE
+                        }
+                        convertToPendingEvent(
+                            merged,
+                            sessionId,
+                            userId,
+                            text,
+                            InputType.TEXT,
+                            operation,
+                            existing.uid,
+                            existing.calendarId
+                        )
+                    } else {
+                        convertToPendingEvent(
+                            extracted,
+                            sessionId,
+                            userId,
+                            text,
+                            InputType.TEXT,
+                            PendingOperation.CREATE,
+                            null,
+                            null
+                        )
+                    }
+                }
+
+                if (pendingEvents.isEmpty()) {
+                    return@withContext Result.failure(Exception("No matching events found to update or delete"))
                 }
 
                 pendingEventDao.insertAll(pendingEvents)
@@ -109,13 +156,34 @@ class AICalendarAssistant private constructor(
         try {
             val calendarRepository = LocalCalendarRepository.getInstance(context)
             calendarRepository.setUserId(event.userId)
-            val iCalEvent = event.toICalEvent(calendarId, color)
-
-            calendarRepository.addEvent(iCalEvent)
-            pendingEventDao.updateStatus(event.id, PendingStatus.APPROVED)
-
-            Log.d(TAG, "Approved event: ${event.title} -> ${iCalEvent.uid}")
-            Result.success(iCalEvent.uid)
+            when (event.operationType) {
+                PendingOperation.CREATE -> {
+                    val iCalEvent = event.toICalEvent(calendarId, color)
+                    calendarRepository.addEvent(iCalEvent)
+                    pendingEventDao.updateStatus(event.id, PendingStatus.APPROVED)
+                    Log.d(TAG, "Approved new event: ${event.title} -> ${iCalEvent.uid}")
+                    Result.success(iCalEvent.uid)
+                }
+                PendingOperation.UPDATE -> {
+                    val targetId = event.targetEventId
+                        ?: return@withContext Result.failure(Exception("Missing target event id"))
+                    val existing = calendarRepository.getEvent(targetId)
+                        ?: return@withContext Result.failure(Exception("Target event not found"))
+                    val updated = mergePendingIntoExisting(existing, event, calendarId, color)
+                    calendarRepository.updateEvent(updated)
+                    pendingEventDao.updateStatus(event.id, PendingStatus.APPROVED)
+                    Log.d(TAG, "Updated event: ${updated.summary} -> ${updated.uid}")
+                    Result.success(updated.uid)
+                }
+                PendingOperation.DELETE -> {
+                    val targetId = event.targetEventId
+                        ?: return@withContext Result.failure(Exception("Missing target event id"))
+                    calendarRepository.deleteEvent(targetId)
+                    pendingEventDao.updateStatus(event.id, PendingStatus.APPROVED)
+                    Log.d(TAG, "Deleted event: $targetId")
+                    Result.success(targetId)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to approve event", e)
             Result.failure(e)
@@ -143,8 +211,22 @@ class AICalendarAssistant private constructor(
             calendarRepository.setUserId(userId)
 
             events.forEach { event ->
-                val iCalEvent = event.toICalEvent(calendarId, color)
-                calendarRepository.addEvent(iCalEvent)
+                when (event.operationType) {
+                    PendingOperation.CREATE -> {
+                        val iCalEvent = event.toICalEvent(calendarId, color)
+                        calendarRepository.addEvent(iCalEvent)
+                    }
+                    PendingOperation.UPDATE -> {
+                        val targetId = event.targetEventId ?: return@forEach
+                        val existing = calendarRepository.getEvent(targetId) ?: return@forEach
+                        val updated = mergePendingIntoExisting(existing, event, calendarId, color)
+                        calendarRepository.updateEvent(updated)
+                    }
+                    PendingOperation.DELETE -> {
+                        val targetId = event.targetEventId ?: return@forEach
+                        calendarRepository.deleteEvent(targetId)
+                    }
+                }
             }
 
             pendingEventDao.updateSessionStatus(sessionId, PendingStatus.APPROVED)
@@ -193,7 +275,10 @@ class AICalendarAssistant private constructor(
         sessionId: String,
         userId: String,
         rawInput: String,
-        inputType: InputType
+        inputType: InputType,
+        operationType: PendingOperation,
+        targetEventId: String?,
+        suggestedCalendarId: String?
     ): PendingEvent {
         val (startTime, endTime) = parseEventTimes(extracted)
 
@@ -205,11 +290,14 @@ class AICalendarAssistant private constructor(
             location = extracted.location,
             startTime = startTime,
             endTime = endTime,
-            isAllDay = extracted.isAllDay,
+            isAllDay = extracted.isAllDay ?: false,
             recurrenceRule = parseRecurrenceToRRule(extracted.recurrence),
             confidence = extracted.confidence,
             sourceType = inputType,
-            rawInput = rawInput
+            rawInput = rawInput,
+            operationType = operationType,
+            targetEventId = targetEventId,
+            suggestedCalendarId = suggestedCalendarId
         )
     }
 
@@ -227,14 +315,15 @@ class AICalendarAssistant private constructor(
                 time = baseDate
             }
 
-            val startTime = if (extracted.startTime != null) {
+            val isAllDay = extracted.isAllDay == true
+            val startTime = if (!extracted.startTime.isNullOrBlank()) {
                 val timeParts = extracted.startTime.split(":")
                 calendar.set(Calendar.HOUR_OF_DAY, timeParts[0].toInt())
                 calendar.set(Calendar.MINUTE, timeParts.getOrNull(1)?.toInt() ?: 0)
                 calendar.set(Calendar.SECOND, 0)
                 calendar.set(Calendar.MILLISECOND, 0)
                 calendar.timeInMillis
-            } else if (extracted.isAllDay) {
+            } else if (isAllDay) {
                 calendar.set(Calendar.HOUR_OF_DAY, 0)
                 calendar.set(Calendar.MINUTE, 0)
                 calendar.set(Calendar.SECOND, 0)
@@ -245,13 +334,13 @@ class AICalendarAssistant private constructor(
             }
 
             val endTime = when {
-                extracted.endTime != null && startTime != null -> {
+                !extracted.endTime.isNullOrBlank() && startTime != null -> {
                     val timeParts = extracted.endTime.split(":")
                     calendar.set(Calendar.HOUR_OF_DAY, timeParts[0].toInt())
                     calendar.set(Calendar.MINUTE, timeParts.getOrNull(1)?.toInt() ?: 0)
                     calendar.timeInMillis
                 }
-                extracted.isAllDay && startTime != null -> {
+                isAllDay && startTime != null -> {
                     // All day events end at 23:59:59
                     calendar.set(Calendar.HOUR_OF_DAY, 23)
                     calendar.set(Calendar.MINUTE, 59)
@@ -270,6 +359,68 @@ class AICalendarAssistant private constructor(
             Log.e(TAG, "Failed to parse event times", e)
             Pair(null, null)
         }
+    }
+
+    private fun shouldIncludeCalendarContext(text: String): Boolean {
+        val lower = text.lowercase()
+        val keywords = listOf(
+            "postpone",
+            "delay",
+            "move",
+            "reschedule",
+            "shift",
+            "update",
+            "change",
+            "edit",
+            "cancel",
+            "delete",
+            "remove"
+        )
+        return keywords.any { lower.contains(it) }
+    }
+
+    private suspend fun buildCalendarContext(
+        calendarRepository: LocalCalendarRepository
+    ): List<CalendarContextEvent> {
+        val calendars = calendarRepository.getCalendars().associateBy { it.id }
+        val events = calendarRepository.getAllEvents()
+        val now = System.currentTimeMillis()
+        val rangeStart = now - 7 * 24 * 60 * 60 * 1000L
+        val rangeEnd = now + 30 * 24 * 60 * 60 * 1000L
+
+        return events
+            .filter { it.dtStart in rangeStart..rangeEnd }
+            .map { event ->
+                CalendarContextEvent(
+                    id = event.uid,
+                    title = event.summary,
+                    date = dateFormat.format(Date(event.dtStart)),
+                    startTime = if (event.allDay) null else timeFormat.format(Date(event.dtStart)),
+                    endTime = if (event.allDay) null else timeFormat.format(Date(event.dtEnd)),
+                    isAllDay = event.allDay,
+                    recurrence = event.rrule,
+                    calendarName = calendars[event.calendarId]?.name
+                )
+            }
+    }
+
+    private fun mergeWithExisting(extracted: ExtractedEvent, existing: ICalEvent): ExtractedEvent {
+        val existingDate = dateFormat.format(Date(existing.dtStart))
+        val existingStart = if (existing.allDay) null else timeFormat.format(Date(existing.dtStart))
+        val existingEnd = if (existing.allDay) null else timeFormat.format(Date(existing.dtEnd))
+        val isAllDay = extracted.isAllDay ?: existing.allDay
+
+        return extracted.copy(
+            title = if (extracted.title.isBlank()) existing.summary else extracted.title,
+            description = extracted.description ?: existing.description.ifBlank { null },
+            location = extracted.location ?: existing.location.ifBlank { null },
+            date = extracted.date ?: existingDate,
+            startTime = extracted.startTime ?: if (isAllDay) null else existingStart,
+            endTime = extracted.endTime ?: if (isAllDay) null else existingEnd,
+            isAllDay = isAllDay,
+            recurrence = extracted.recurrence ?: existing.rrule,
+            targetEventId = existing.uid
+        )
     }
 
     /**
@@ -310,5 +461,34 @@ class AICalendarAssistant private constructor(
             lower.contains("weekend") -> "FREQ=WEEKLY;BYDAY=SA,SU"
             else -> null
         }
+    }
+
+    private fun mergePendingIntoExisting(
+        existing: ICalEvent,
+        pending: PendingEvent,
+        fallbackCalendarId: String,
+        fallbackColor: Int
+    ): ICalEvent {
+        val calendarId = pending.suggestedCalendarId
+            ?: existing.calendarId.ifBlank { fallbackCalendarId }
+        val color = pending.suggestedColor
+            ?: existing.color.takeIf { it != 0 } ?: fallbackColor
+        val start = pending.startTime ?: existing.dtStart
+        val end = pending.endTime ?: existing.dtEnd
+
+        return existing.copy(
+            calendarId = calendarId,
+            summary = pending.title,
+            description = pending.description ?: "",
+            location = pending.location ?: "",
+            dtStart = start,
+            dtEnd = end,
+            allDay = pending.isAllDay,
+            rrule = pending.recurrenceRule,
+            color = color,
+            lastModified = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            syncStatus = com.example.smartcalendar.data.model.SyncStatus.PENDING
+        )
     }
 }

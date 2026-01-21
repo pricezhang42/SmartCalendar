@@ -44,13 +44,14 @@ class GeminiProvider : AIService {
     override suspend fun parseText(
         text: String,
         currentDate: String,
-        timezone: String
+        timezone: String,
+        calendarContext: List<CalendarContextEvent>?
     ): ProcessingResult {
         if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
             return ProcessingResult.Error("Gemini API key not configured")
         }
 
-        val prompt = buildTextParsingPrompt(text, currentDate, timezone)
+        val prompt = buildTextParsingPrompt(text, currentDate, timezone, calendarContext)
 
         return generateContent(prompt).fold(
             onSuccess = { responseText ->
@@ -94,12 +95,26 @@ class GeminiProvider : AIService {
         )
     }
 
-    private fun buildTextParsingPrompt(text: String, currentDate: String, timezone: String): String {
+    private fun buildTextParsingPrompt(
+        text: String,
+        currentDate: String,
+        timezone: String,
+        calendarContext: List<CalendarContextEvent>?
+    ): String {
+        val contextJson = calendarContext?.let {
+            json.encodeToString(
+                kotlinx.serialization.builtins.ListSerializer(CalendarContextEvent.serializer()),
+                it
+            )
+        }
         return """
 You are a calendar assistant. Extract calendar events from the following text.
 
 Current date: $currentDate
 User timezone: $timezone
+
+Calendar context (use for updates/deletes when relevant):
+${contextJson ?: "[]"}
 
 Text to parse:
 "$text"
@@ -111,6 +126,9 @@ Instructions:
 4. For all-day events (like birthdays, holidays), set isAllDay to true
 5. Parse recurrence patterns if mentioned (e.g., "every Monday", "weekly")
 6. Estimate confidence (0.0-1.0) based on how clearly the event details are specified
+7. If the user is modifying or deleting existing events, set action to UPDATE or DELETE
+8. For UPDATE/DELETE, set targetEventId to the matching id from calendar context
+9. For UPDATE, change date/time fields instead of adding phrases like "postponed" to description
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
 {
@@ -122,9 +140,11 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
       "date": "YYYY-MM-DD",
       "startTime": "HH:MM or null",
       "endTime": "HH:MM or null",
-      "isAllDay": false,
+      "isAllDay": true,
       "recurrence": "Natural language recurrence or null",
-      "confidence": 0.95
+      "confidence": 0.95,
+      "action": "CREATE|UPDATE|DELETE",
+      "targetEventId": "required when UPDATE or DELETE"
     }
   ]
 }
@@ -176,7 +196,16 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
                 .replace("```", "")
                 .trim()
 
-            val parsed = json.decodeFromString<GeminiEventResponse>(cleanedResponse)
+            val parsed = if (cleanedResponse.startsWith("[")) {
+                GeminiEventResponse(
+                    events = json.decodeFromString(
+                        kotlinx.serialization.builtins.ListSerializer(ExtractedEvent.serializer()),
+                        cleanedResponse
+                    )
+                )
+            } else {
+                json.decodeFromString<GeminiEventResponse>(cleanedResponse)
+            }
 
             val avgConfidence = if (parsed.events.isNotEmpty()) {
                 parsed.events.map { it.confidence }.average().toFloat()
