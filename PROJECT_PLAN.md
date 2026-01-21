@@ -442,5 +442,496 @@ The phased implementation approach ensures a solid foundation before adding adva
 
 ---
 
-*Document Version: 1.0*  
-*Last Updated: [Current Date]*
+## AI Integration Technical Plan
+
+### Current Implementation Status
+
+The app has completed Phases 1-5 of core development:
+- ✅ Room Database with CalendarDao, EventDao
+- ✅ Supabase Auth (email/password, session management)
+- ✅ Supabase PostgreSQL sync with RLS
+- ✅ Offline support with pending queue
+- ✅ Network monitoring and auto-sync
+- ✅ Real-time sync infrastructure
+- ✅ Comprehensive test suite
+
+### Data Available for AI
+
+**Event Data (ICalEvent model):**
+- `summary` - Event title
+- `description` - Event details
+- `location` - Event location
+- `dtStart/dtEnd` - Timestamps (milliseconds)
+- `duration` - ISO 8601 format
+- `rrule` - RFC 5545 recurrence rules
+- `allDay` - Boolean flag
+- `color` - Event categorization
+
+**User Context:**
+- Calendar organization (Personal/Work calendars)
+- Event patterns (timing, duration, frequency)
+- Recurring event habits
+- Free/busy time slots
+
+---
+
+### AI Model & Service Options
+
+#### Option 1: OpenAI GPT-4 / GPT-4o (Recommended for MVP)
+
+**Pros:**
+- GPT-4 Vision handles image→calendar extraction directly
+- Excellent natural language understanding
+- Large context window (128k tokens)
+- Well-documented Android/Kotlin SDK via Retrofit
+- JSON mode for structured output
+
+**Cons:**
+- Higher cost per request ($0.01-0.03/1k tokens)
+- Requires internet connection
+- Rate limits on free tier
+
+**Best For:** Image parsing, natural language input, complex reasoning
+
+**Cost Estimate:** ~$0.05-0.15 per AI-assisted event creation
+
+---
+
+#### Option 2: Google Gemini (Pro/Flash)
+
+**Pros:**
+- Native Android/Firebase integration
+- Gemini Flash is very fast and cheap
+- Good multimodal capabilities (text, image, audio)
+- Generous free tier (60 requests/minute)
+- On-device inference option with Gemini Nano
+
+**Cons:**
+- Vision quality slightly below GPT-4V
+- Less mature API than OpenAI
+
+**Best For:** Cost-sensitive production, Android-native integration
+
+**Cost Estimate:** ~$0.01-0.05 per AI-assisted event creation
+
+---
+
+#### Option 3: Anthropic Claude (3.5 Sonnet / 3.5 Haiku)
+
+**Pros:**
+- Excellent instruction following
+- Strong at structured data extraction
+- Good reasoning capabilities
+- Haiku is fast and cheap for simple tasks
+
+**Cons:**
+- No vision capability in Haiku
+- Requires API key management
+- No official Android SDK (use Retrofit)
+
+**Best For:** Text-only NLP, complex calendar reasoning
+
+**Cost Estimate:** ~$0.01-0.08 per AI-assisted event creation
+
+---
+
+#### Option 4: On-Device Models (ML Kit / TensorFlow Lite)
+
+**Pros:**
+- No API costs
+- Works offline
+- Privacy-preserving (data stays on device)
+- Fast response times
+
+**Cons:**
+- Limited capabilities vs cloud models
+- Larger app size (50-200MB for models)
+- Complex implementation
+- Less accurate for complex inputs
+
+**Best For:** Simple entity extraction, offline fallback
+
+**Models:**
+- Google ML Kit Text Recognition (OCR)
+- ML Kit Entity Extraction (dates, times)
+- TensorFlow Lite custom model
+
+---
+
+#### Option 5: Hybrid Approach (Recommended)
+
+**Architecture:**
+```
+User Input
+    ↓
+┌─────────────────────────────────────┐
+│  On-Device Preprocessing            │
+│  - ML Kit for quick text extraction │
+│  - Simple date/time parsing         │
+│  - Input validation                 │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│  Cloud AI (when needed)             │
+│  - Complex image understanding      │
+│  - Natural language processing      │
+│  - Multi-event extraction           │
+│  - Conflict resolution suggestions  │
+└─────────────────────────────────────┘
+    ↓
+Event Suggestions → User Approval → Calendar
+```
+
+**Benefits:**
+- Cost-effective (only call cloud AI when needed)
+- Works offline for simple inputs
+- Best accuracy for complex inputs
+- Graceful degradation
+
+---
+
+### Recommended AI Service Stack
+
+| Feature | Primary Service | Fallback |
+|---------|----------------|----------|
+| Image → Calendar | GPT-4 Vision | Gemini Pro Vision |
+| Text → Events | Gemini Flash | Claude Haiku |
+| Voice → Text | Google Speech-to-Text | Whisper API |
+| Date/Time Extraction | ML Kit (on-device) | Regex + Cloud |
+| Smart Suggestions | Gemini Flash | Local heuristics |
+
+---
+
+### AI Integration Architecture
+
+```
+┌──────────────────────────────────────────────────────┐
+│                    UI Layer                          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │ AI Input    │  │ Preview     │  │ Refinement  │  │
+│  │ Screen      │  │ Screen      │  │ Dialog      │  │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │
+└──────────────────────────────────────────────────────┘
+                          ↓
+┌──────────────────────────────────────────────────────┐
+│               AI Processing Layer                    │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │              AICalendarAssistant                │ │
+│  │  - Orchestrates AI calls                        │ │
+│  │  - Manages input preprocessing                  │ │
+│  │  - Handles response parsing                     │ │
+│  └─────────────────────────────────────────────────┘ │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │ ImageParser │  │ TextParser  │  │ VoiceParser │  │
+│  │ (GPT-4V)    │  │ (Gemini)    │  │ (STT API)   │  │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │
+└──────────────────────────────────────────────────────┘
+                          ↓
+┌──────────────────────────────────────────────────────┐
+│                Data Layer                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │ Pending     │  │ Local       │  │ Supabase    │  │
+│  │ Events DAO  │  │ Calendar    │  │ Repository  │  │
+│  │ (Room)      │  │ Repository  │  │ (Sync)      │  │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+### New Components to Create
+
+#### 1. AI Service Interfaces
+
+```kotlin
+// data/ai/AIService.kt
+interface AIService {
+    suspend fun parseImage(image: ByteArray, prompt: String): AIResponse
+    suspend fun parseText(text: String): AIResponse
+    suspend fun refineEvents(events: List<PendingEvent>, instruction: String): AIResponse
+}
+
+// data/ai/AIResponse.kt
+data class AIResponse(
+    val events: List<ExtractedEvent>,
+    val confidence: Float,
+    val warnings: List<String>,
+    val rawResponse: String
+)
+
+data class ExtractedEvent(
+    val title: String,
+    val description: String?,
+    val location: String?,
+    val startTime: Long?,
+    val endTime: Long?,
+    val duration: String?,
+    val isAllDay: Boolean,
+    val recurrenceRule: String?,
+    val confidence: Float,
+    val suggestedCalendar: String?
+)
+```
+
+#### 2. AI Provider Implementations
+
+```kotlin
+// data/ai/providers/OpenAIProvider.kt
+class OpenAIProvider(private val apiKey: String) : AIService {
+    // GPT-4 Vision for images
+    // GPT-4 for text
+}
+
+// data/ai/providers/GeminiProvider.kt
+class GeminiProvider(private val context: Context) : AIService {
+    // Firebase Vertex AI integration
+    // Gemini Pro/Flash
+}
+
+// data/ai/providers/ClaudeProvider.kt
+class ClaudeProvider(private val apiKey: String) : AIService {
+    // Claude API for text processing
+}
+```
+
+#### 3. AI Calendar Assistant (Orchestrator)
+
+```kotlin
+// data/ai/AICalendarAssistant.kt
+class AICalendarAssistant(
+    private val imageProvider: AIService,
+    private val textProvider: AIService,
+    private val voiceService: SpeechToTextService,
+    private val calendarRepository: LocalCalendarRepository
+) {
+    suspend fun processInput(input: AIInput): ProcessingResult
+    suspend fun refineEvents(events: List<PendingEvent>, instruction: String): ProcessingResult
+    suspend fun detectConflicts(events: List<ExtractedEvent>): List<Conflict>
+    suspend fun suggestOptimalTimes(event: ExtractedEvent): List<TimeSlot>
+}
+```
+
+#### 4. Pending Events System
+
+```kotlin
+// data/model/PendingEvent.kt
+@Entity(tableName = "pending_events")
+data class PendingEvent(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val sessionId: String,
+    val title: String,
+    val description: String?,
+    val location: String?,
+    val startTime: Long?,
+    val endTime: Long?,
+    val isAllDay: Boolean,
+    val recurrenceRule: String?,
+    val confidence: Float,
+    val status: PendingStatus, // PENDING, APPROVED, REJECTED, MODIFIED
+    val suggestedCalendarId: String?,
+    val sourceType: InputType, // TEXT, IMAGE, VOICE, DOCUMENT
+    val createdAt: Long
+)
+```
+
+#### 5. UI Components
+
+```
+ui/ai/
+├── AIInputFragment.kt        # Multi-modal input screen
+├── AIPreviewFragment.kt      # Event preview/approval screen
+├── AIRefinementDialog.kt     # Natural language refinement
+├── components/
+│   ├── InputTypeSelector.kt  # Photo/Text/Voice/Doc selector
+│   ├── EventPreviewCard.kt   # Single event preview
+│   ├── ConfidenceIndicator.kt
+│   └── ConflictWarning.kt
+```
+
+---
+
+### AI Prompt Engineering
+
+#### Image Parsing Prompt (GPT-4 Vision)
+
+```
+You are a calendar assistant. Extract calendar events from this image.
+
+For each event found, provide:
+- title: Event name
+- date: In YYYY-MM-DD format
+- startTime: In HH:MM format (24h)
+- endTime: In HH:MM format (24h) or null
+- location: If mentioned
+- recurrence: If it's recurring (e.g., "weekly on Mondays")
+
+Output as JSON array. If no events found, return empty array.
+Include confidence score (0.0-1.0) for each field.
+
+Example output:
+{
+  "events": [
+    {
+      "title": "Team Meeting",
+      "date": "2024-03-15",
+      "startTime": "14:00",
+      "endTime": "15:00",
+      "location": "Conference Room A",
+      "recurrence": null,
+      "confidence": 0.95
+    }
+  ]
+}
+```
+
+#### Text Parsing Prompt
+
+```
+Extract calendar events from the following text.
+Current date: {currentDate}
+User timezone: {timezone}
+
+Text: "{userInput}"
+
+Parse any dates (including relative like "tomorrow", "next Monday").
+Output as JSON with the same structure as above.
+```
+
+---
+
+### Cost Management Strategy
+
+1. **Request Caching**
+   - Cache identical requests for 24 hours
+   - Hash input content for cache key
+
+2. **Tiered Processing**
+   - Simple inputs → On-device ML Kit
+   - Complex inputs → Cloud AI
+   - User preference for quality vs cost
+
+3. **Rate Limiting**
+   - Free tier: 10 AI requests/day
+   - Premium: Unlimited
+   - Show remaining requests in UI
+
+4. **Batch Processing**
+   - Combine multiple images into single request
+   - Process in batches during off-peak hours
+
+---
+
+### Implementation Phases (AI-Specific)
+
+#### Phase 6A: Text Input AI (2-3 weeks)
+- [ ] Create AIService interface
+- [ ] Implement Gemini/OpenAI text provider
+- [ ] Build AI input screen (text only)
+- [ ] Build preview/approval screen
+- [ ] Add pending events to Room database
+- [ ] Integration with existing calendar
+
+#### Phase 6B: Image Input AI (2-3 weeks)
+- [ ] Implement GPT-4 Vision provider
+- [ ] Add image picker/camera integration
+- [ ] Handle image preprocessing
+- [ ] Test with various schedule formats
+
+#### Phase 6C: Voice Input (1-2 weeks)
+- [ ] Integrate Google Speech-to-Text
+- [ ] Add voice recording UI
+- [ ] Pipe voice transcription to text parser
+
+#### Phase 6D: Advanced Features (2-3 weeks)
+- [ ] Iterative refinement dialog
+- [ ] Conflict detection
+- [ ] Smart time suggestions
+- [ ] Confidence indicators
+- [ ] Batch approval
+
+#### Phase 6E: Optimization (1-2 weeks)
+- [ ] On-device ML Kit fallback
+- [ ] Request caching
+- [ ] Cost monitoring
+- [ ] Performance optimization
+
+---
+
+### API Key Management
+
+**Development:**
+- Store in `local.properties` (gitignored)
+- Access via BuildConfig fields
+
+**Production:**
+- Store in Supabase Edge Functions (server-side)
+- Or use Android Keystore for client-side
+- Never expose keys in APK
+
+```kotlin
+// build.gradle.kts
+android {
+    defaultConfig {
+        buildConfigField("String", "OPENAI_API_KEY",
+            "\"${project.findProperty("OPENAI_API_KEY") ?: ""}\"")
+        buildConfigField("String", "GEMINI_API_KEY",
+            "\"${project.findProperty("GEMINI_API_KEY") ?: ""}\"")
+    }
+}
+```
+
+---
+
+### Security Considerations
+
+1. **API Keys**: Never hardcode, use secure storage
+2. **User Data**: Don't send unnecessary context to AI
+3. **Image Privacy**: Warn users before uploading images
+4. **Data Retention**: Configure AI providers to not retain data
+5. **Audit Logging**: Track AI requests for debugging
+
+---
+
+### Testing Strategy for AI
+
+1. **Unit Tests**
+   - Mock AI responses
+   - Test date/time parsing
+   - Test JSON parsing
+
+2. **Integration Tests**
+   - Test with real API (limited)
+   - Verify end-to-end flow
+
+3. **Test Cases**
+   - Simple event: "Meeting tomorrow at 2pm"
+   - Complex: "Weekly standup every Monday and Wednesday at 9am"
+   - Image: Class schedule, event flyer, screenshot
+   - Edge cases: Ambiguous dates, missing times
+
+---
+
+### Recommended First Implementation
+
+**Start with Option 2 (Gemini) because:**
+1. Free tier is generous for development
+2. Native Android/Firebase integration
+3. Good enough quality for MVP
+4. Easy to swap to GPT-4 later if needed
+
+**MVP Feature Set:**
+1. Text input → Event extraction
+2. Simple preview screen
+3. Basic approval flow
+4. Single calendar target
+
+**Then iterate to add:**
+- Image input
+- Voice input
+- Refinement dialog
+- Conflict detection
+
+---
+
+*Document Version: 1.1*
+*Last Updated: January 2026*
