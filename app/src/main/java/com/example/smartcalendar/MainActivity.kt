@@ -496,9 +496,13 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
 
     override fun onDestroy() {
         super.onDestroy()
-        syncManager.stopNetworkMonitoring()
-        lifecycleScope.launch {
-            realtimeSync.stopListening()
+        if (::syncManager.isInitialized) {
+            syncManager.stopNetworkMonitoring()
+        }
+        if (::realtimeSync.isInitialized) {
+            lifecycleScope.launch {
+                realtimeSync.stopListening()
+            }
         }
     }
 

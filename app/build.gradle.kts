@@ -80,14 +80,13 @@ dependencies {
     implementation(libs.supabase.realtime)
     
     // Ktor for Supabase and Gemini
+    implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.android)
     implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
     
     // Serialization
     implementation(libs.kotlinx.serialization.json)
-
-    // Google Generative AI (Gemini)
-    implementation(libs.generativeai)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

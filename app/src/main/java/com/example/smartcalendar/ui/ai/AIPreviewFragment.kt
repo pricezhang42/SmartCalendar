@@ -14,6 +14,7 @@ import com.example.smartcalendar.R
 import com.example.smartcalendar.data.ai.AICalendarAssistant
 import com.example.smartcalendar.data.model.LocalCalendar
 import com.example.smartcalendar.data.model.PendingEvent
+import com.example.smartcalendar.data.repository.AuthRepository
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentAiPreviewBinding
 import kotlinx.coroutines.flow.collectLatest
@@ -28,6 +29,7 @@ class AIPreviewFragment : Fragment() {
     private val binding get() = _binding!!
 
     private lateinit var aiAssistant: AICalendarAssistant
+    private lateinit var localRepository: LocalCalendarRepository
     private lateinit var adapter: PendingEventAdapter
 
     private var sessionId: String = ""
@@ -64,6 +66,12 @@ class AIPreviewFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         aiAssistant = AICalendarAssistant.getInstance(requireContext())
+        localRepository = LocalCalendarRepository.getInstance(requireContext())
+        AuthRepository.getInstance().getCurrentUserId()?.let { userId ->
+            if (userId.isNotEmpty()) {
+                localRepository.setUserId(userId)
+            }
+        }
 
         setupRecyclerView()
         setupListeners()
@@ -100,7 +108,7 @@ class AIPreviewFragment : Fragment() {
 
     private fun loadCalendars() {
         lifecycleScope.launch {
-            calendars = LocalCalendarRepository.getInstance().getCalendars()
+            calendars = localRepository.getCalendars()
             if (calendars.isNotEmpty()) {
                 selectedCalendar = calendars.firstOrNull { it.isDefault } ?: calendars.first()
                 updateCalendarDisplay()

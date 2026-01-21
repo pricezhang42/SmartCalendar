@@ -2,9 +2,16 @@ package com.example.smartcalendar.data.ai
 
 import android.util.Log
 import com.example.smartcalendar.BuildConfig
-import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.content
-import com.google.ai.client.generativeai.type.generationConfig
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.request.url
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
@@ -14,7 +21,13 @@ class GeminiProvider : AIService {
 
     companion object {
         private const val TAG = "GeminiProvider"
-        private const val MODEL_NAME = "gemini-1.5-flash"
+        private val MODEL_CANDIDATES = listOf(
+            "gemini-2.5-flash",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-001",
+            "gemini-1.0-pro"
+        )
     }
 
     private val json = Json {
@@ -22,17 +35,10 @@ class GeminiProvider : AIService {
         isLenient = true
     }
 
-    private val generativeModel by lazy {
-        GenerativeModel(
-            modelName = MODEL_NAME,
-            apiKey = BuildConfig.GEMINI_API_KEY,
-            generationConfig = generationConfig {
-                temperature = 0.2f
-                topK = 32
-                topP = 0.95f
-                maxOutputTokens = 2048
-            }
-        )
+    private val httpClient by lazy {
+        HttpClient(OkHttp) {
+            expectSuccess = false
+        }
     }
 
     override suspend fun parseText(
@@ -46,21 +52,16 @@ class GeminiProvider : AIService {
 
         val prompt = buildTextParsingPrompt(text, currentDate, timezone)
 
-        return try {
-            val response = generativeModel.generateContent(
-                content {
-                    text(prompt)
-                }
-            )
-
-            val responseText = response.text ?: return ProcessingResult.Error("Empty response from Gemini")
-            Log.d(TAG, "Gemini response: $responseText")
-
-            parseGeminiResponse(responseText)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error calling Gemini API", e)
-            ProcessingResult.Error("Failed to process: ${e.message}", e)
-        }
+        return generateContent(prompt).fold(
+            onSuccess = { responseText ->
+                Log.d(TAG, "Gemini response: $responseText")
+                parseGeminiResponse(responseText)
+            },
+            onFailure = { error ->
+                Log.e(TAG, "Error calling Gemini API", error)
+                ProcessingResult.Error("Failed to process: ${error.message}", error as? Exception)
+            }
+        )
     }
 
     override suspend fun parseImage(
@@ -81,21 +82,16 @@ class GeminiProvider : AIService {
 
         val prompt = buildRefinementPrompt(events, instruction)
 
-        return try {
-            val response = generativeModel.generateContent(
-                content {
-                    text(prompt)
-                }
-            )
-
-            val responseText = response.text ?: return ProcessingResult.Error("Empty response from Gemini")
-            Log.d(TAG, "Gemini refinement response: $responseText")
-
-            parseGeminiResponse(responseText)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error refining events", e)
-            ProcessingResult.Error("Failed to refine: ${e.message}", e)
-        }
+        return generateContent(prompt).fold(
+            onSuccess = { responseText ->
+                Log.d(TAG, "Gemini refinement response: $responseText")
+                parseGeminiResponse(responseText)
+            },
+            onFailure = { error ->
+                Log.e(TAG, "Error refining events", error)
+                ProcessingResult.Error("Failed to refine: ${error.message}", error as? Exception)
+            }
+        )
     }
 
     private fun buildTextParsingPrompt(text: String, currentDate: String, timezone: String): String {
@@ -200,4 +196,83 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
             ProcessingResult.Error("Failed to parse response: ${e.message}", e)
         }
     }
+
+    private suspend fun generateContent(prompt: String): Result<String> {
+        return try {
+            val request = GeminiGenerateRequest(
+                contents = listOf(
+                    GeminiRequestContent(
+                        parts = listOf(GeminiPart(text = prompt))
+                    )
+                )
+            )
+            var lastError: Exception? = null
+            for (modelName in MODEL_CANDIDATES) {
+                val response = httpClient.post(
+                    "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent"
+                ) {
+                    url {
+                        parameters.append("key", BuildConfig.GEMINI_API_KEY)
+                    }
+                    contentType(ContentType.Application.Json)
+                    setBody(json.encodeToString(GeminiGenerateRequest.serializer(), request))
+                }
+                val responseBody = response.bodyAsText()
+                if (!response.status.isSuccess()) {
+                    lastError = Exception("Gemini API error: ${response.status} $responseBody")
+                    continue
+                }
+
+                val parsed = json.decodeFromString(GeminiGenerateResponse.serializer(), responseBody)
+                val text = parsed.candidates
+                    .firstOrNull()
+                    ?.content
+                    ?.parts
+                    ?.firstOrNull()
+                    ?.text
+                    ?.trim()
+
+                if (!text.isNullOrEmpty()) {
+                    return Result.success(text)
+                }
+                lastError = Exception("Empty response from Gemini")
+            }
+
+            Result.failure(lastError ?: Exception("Failed to call Gemini API"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    @Serializable
+    private data class GeminiGenerateRequest(
+        val contents: List<GeminiRequestContent>
+    )
+
+    @Serializable
+    private data class GeminiRequestContent(
+        val parts: List<GeminiPart>,
+        val role: String = "user"
+    )
+
+    @Serializable
+    private data class GeminiPart(
+        val text: String
+    )
+
+    @Serializable
+    private data class GeminiGenerateResponse(
+        val candidates: List<GeminiCandidate> = emptyList()
+    )
+
+    @Serializable
+    private data class GeminiCandidate(
+        val content: GeminiResponseContent? = null
+    )
+
+    @Serializable
+    private data class GeminiResponseContent(
+        val parts: List<GeminiPart> = emptyList(),
+        val role: String? = null
+    )
 }
