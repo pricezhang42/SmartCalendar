@@ -10,7 +10,9 @@
       "Bash(adb install:*)",
       "Bash(adb shell:*)",
       "Bash(./gradlew testDebugUnitTest:*)",
-      "Bash(./gradlew:*)"
+      "Bash(./gradlew:*)",
+      "Bash(.gradlew.bat clean assembleDebug)",
+      "Bash(./gradlew.bat clean assembleDebug)"
     ]
   }
 }

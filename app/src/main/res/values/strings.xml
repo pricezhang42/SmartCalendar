@@ -121,4 +121,21 @@
     <string name="sign_up">Create Account</string>
     <string name="sign_out">Sign Out</string>
     <string name="sync_now">Sync Now</string>
+
+    <!-- AI Assistant -->
+    <string name="ai_assistant">Cali</string>
+    <string name="ai_input_hint">Describe your events…\n\nExamples:\n• Meeting with John tomorrow at 2pm\n• Weekly team standup every Monday at 9am\n• Dentist appointment next Friday 3pm</string>
+    <string name="ai_process">Process</string>
+    <string name="ai_processing">Processing…</string>
+    <string name="ai_error">Failed to process</string>
+    <string name="ai_no_events">No events found</string>
+    <string name="ai_preview_title">Review Events</string>
+    <string name="ai_approve_all">Approve All</string>
+    <string name="ai_reject_all">Cancel</string>
+    <string name="ai_confidence">%d%% confidence</string>
+    <string name="ai_tap_to_edit">Tap to edit</string>
+    <string name="ai_event_approved">Event added to calendar</string>
+    <string name="ai_events_approved">%d events added to calendar</string>
+    <string name="ai_changed_field">AI suggested</string>
+    <string name="ai_api_key_missing">Gemini API key not configured</string>
 </resources>

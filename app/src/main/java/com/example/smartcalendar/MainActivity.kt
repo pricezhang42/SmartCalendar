@@ -24,6 +24,7 @@ import com.example.smartcalendar.data.sync.CalendarImporter
 import com.example.smartcalendar.data.sync.SyncManager
 import com.example.smartcalendar.data.sync.RealtimeSync
 import com.example.smartcalendar.databinding.ActivityMainBinding
+import com.example.smartcalendar.ui.ai.AIAssistantActivity
 import com.example.smartcalendar.ui.auth.LoginActivity
 import com.example.smartcalendar.ui.calendar.CalendarFragment
 import com.example.smartcalendar.ui.event.EventModalFragment
@@ -239,6 +240,16 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
             val initialTime = fragment?.getCurrentTimeMillis() ?: System.currentTimeMillis()
             showEventModal(null, initialTime)
         }
+
+        // Long press on FAB opens AI Assistant
+        binding.fab.setOnLongClickListener {
+            openAIAssistant()
+            true
+        }
+    }
+
+    private fun openAIAssistant() {
+        startActivity(Intent(this, AIAssistantActivity::class.java))
     }
 
     private fun checkPermissions() {
@@ -404,12 +415,12 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
 
     override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
         return when (item.itemId) {
-            R.id.action_sync -> {
-                performSync()
+            R.id.action_ai -> {
+                openAIAssistant()
                 true
             }
-            R.id.action_settings -> {
-                // TODO: Open settings
+            R.id.action_sync -> {
+                performSync()
                 true
             }
             else -> super.onOptionsItemSelected(item)

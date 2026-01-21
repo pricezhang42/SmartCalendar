@@ -3,16 +3,20 @@ package com.example.smartcalendar.ui.event
 import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.EventInstance
 import com.example.smartcalendar.data.model.ICalEvent
+import com.example.smartcalendar.data.model.PendingEvent
+import com.example.smartcalendar.data.model.PendingStatus
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentEventModalBinding
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -22,6 +26,7 @@ import java.util.*
 
 /**
  * Bottom sheet dialog for creating and editing events.
+ * Also supports editing AI-extracted pending events with highlighted fields.
  */
 class EventModalFragment : BottomSheetDialogFragment() {
 
@@ -29,8 +34,12 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private val binding get() = _binding!!
 
     private var existingEvent: ICalEvent? = null
+    private var pendingEvent: PendingEvent? = null
     private var instanceStartTime: Long? = null
-    
+
+    // AI mode - when editing a pending event
+    private var isAIMode = false
+
     // UI state
     private var selectedDate = Calendar.getInstance()
     private var startTime = Calendar.getInstance()
@@ -41,12 +50,12 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private var repeatFrequency = "WEEKLY"
     private var repeatInterval = 1
     private var reminderMinutes: Int? = null
-    
+
     // Repeat end options
     private var repeatEndType = "NEVER" // NEVER, COUNT, UNTIL
     private var repeatCount = 10
     private var repeatUntil: Calendar? = null
-    
+
     // Calendar selection
     private var selectedCalendarId = "personal"
 
@@ -54,6 +63,9 @@ class EventModalFragment : BottomSheetDialogFragment() {
     var onDeleteListener: ((String) -> Unit)? = null
     var onDeleteInstanceListener: ((String, Long) -> Unit)? = null
     var onDeleteFromInstanceListener: ((String, Long) -> Unit)? = null
+
+    // For AI pending events
+    var onPendingEventSave: ((PendingEvent) -> Unit)? = null
 
     companion object {
         private const val ARG_EVENT_UID = "event_uid"
@@ -69,6 +81,16 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 }
                 existingEvent = event
                 instanceStartTime = instance?.startTime
+            }
+        }
+
+        /**
+         * Create modal for editing an AI-extracted pending event.
+         */
+        fun newInstanceForPending(pending: PendingEvent): EventModalFragment {
+            return EventModalFragment().apply {
+                pendingEvent = pending
+                isAIMode = true
             }
         }
     }
@@ -99,11 +121,17 @@ class EventModalFragment : BottomSheetDialogFragment() {
     }
 
     private fun setupViews() {
+        // AI mode: editing a pending event
+        if (isAIMode && pendingEvent != null) {
+            setupPendingEventViews()
+            return
+        }
+
         existingEvent?.let { event ->
             binding.titleEditText.setText(event.summary)
             binding.descriptionEditText.setText(event.description)
             binding.locationEditText.setText(event.location)
-            
+
             // For recurring events, use the instance time, not master event time
             if (event.isRecurring && instanceStartTime != null) {
                 val duration = event.getDurationMs()
@@ -115,13 +143,13 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 endTime.timeInMillis = event.dtEnd
                 selectedDate.timeInMillis = event.dtStart
             }
-            
+
             isAllDay = event.allDay
             repeatEnabled = event.isRecurring
-            
+
             // Parse RRULE for repeat options
             event.rrule?.let { parseRRule(it) }
-            
+
             // Set modal title to event title
             binding.modalTitle.text = event.summary
             binding.deleteButton.visibility = View.VISIBLE
@@ -159,6 +187,106 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
         setupDayOfWeekChips()
         updateRepeatEndUI()
+    }
+
+    /**
+     * Setup views for editing an AI-extracted pending event.
+     * Highlights fields that were AI-suggested.
+     */
+    private fun setupPendingEventViews() {
+        val event = pendingEvent ?: return
+
+        binding.modalTitle.text = getString(R.string.ai_preview_title)
+
+        // Populate fields from pending event
+        binding.titleEditText.setText(event.title)
+        highlightField(binding.titleEditText)
+
+        event.description?.let {
+            binding.descriptionEditText.setText(it)
+            if (it.isNotBlank()) highlightField(binding.descriptionEditText)
+        }
+
+        event.location?.let {
+            binding.locationEditText.setText(it)
+            if (it.isNotBlank()) highlightField(binding.locationEditText)
+        }
+
+        // Set times
+        event.startTime?.let { start ->
+            startTime.timeInMillis = start
+            selectedDate.timeInMillis = start
+            highlightField(binding.dateValue)
+            highlightField(binding.startTimeValue)
+        }
+
+        event.endTime?.let { end ->
+            endTime.timeInMillis = end
+            highlightField(binding.endTimeValue)
+        } ?: run {
+            // Default 1 hour if no end time
+            event.startTime?.let {
+                endTime.timeInMillis = it + 3600000
+            }
+        }
+
+        isAllDay = event.isAllDay
+        binding.allDaySwitch.isChecked = isAllDay
+
+        // Recurrence
+        event.recurrenceRule?.let { rrule ->
+            repeatEnabled = true
+            binding.repeatSwitch.isChecked = true
+            binding.repeatOptionsContainer.visibility = View.VISIBLE
+            parseRRule(rrule)
+        }
+
+        // Calendar
+        event.suggestedCalendarId?.let { selectedCalendarId = it }
+
+        // Don't show delete button for pending events
+        binding.deleteButton.visibility = View.GONE
+
+        // Setup days of week
+        if (selectedDaysOfWeek.isEmpty()) {
+            val dayCode = when (startTime.get(Calendar.DAY_OF_WEEK)) {
+                Calendar.SUNDAY -> "SU"
+                Calendar.MONDAY -> "MO"
+                Calendar.TUESDAY -> "TU"
+                Calendar.WEDNESDAY -> "WE"
+                Calendar.THURSDAY -> "TH"
+                Calendar.FRIDAY -> "FR"
+                Calendar.SATURDAY -> "SA"
+                else -> "SU"
+            }
+            selectedDaysOfWeek.add(dayCode)
+        }
+
+        setupDayOfWeekChips()
+        updateRepeatEndUI()
+        updateCalendarDisplay()
+    }
+
+    /**
+     * Highlight a view to indicate it was AI-suggested.
+     */
+    private fun highlightField(view: View) {
+        val highlightColor = ContextCompat.getColor(requireContext(), R.color.ai_highlight)
+        val borderColor = ContextCompat.getColor(requireContext(), R.color.ai_highlight_border)
+
+        val drawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 8f * resources.displayMetrics.density
+            setColor(highlightColor)
+            setStroke(2, borderColor)
+        }
+        view.background = drawable
+        view.setPadding(
+            (8 * resources.displayMetrics.density).toInt(),
+            (4 * resources.displayMetrics.density).toInt(),
+            (8 * resources.displayMetrics.density).toInt(),
+            (4 * resources.displayMetrics.density).toInt()
+        )
     }
 
     private fun parseRRule(rrule: String) {
@@ -465,6 +593,12 @@ class EventModalFragment : BottomSheetDialogFragment() {
             return
         }
 
+        // AI mode: save pending event changes
+        if (isAIMode && pendingEvent != null) {
+            savePendingEvent(title)
+            return
+        }
+
         lifecycleScope.launch {
             val rrule = if (repeatEnabled) buildRRule() else null
             val duration = if (repeatEnabled) ICalEvent.toDurationString(endTime.timeInMillis - startTime.timeInMillis) else null
@@ -495,6 +629,29 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 dismiss()
             }
         }
+    }
+
+    /**
+     * Save changes to a pending AI event.
+     */
+    private fun savePendingEvent(title: String) {
+        val original = pendingEvent ?: return
+        val rrule = if (repeatEnabled) buildRRule() else null
+
+        val updated = original.copy(
+            title = title,
+            description = binding.descriptionEditText.text.toString().trim().takeIf { it.isNotBlank() },
+            location = binding.locationEditText.text.toString().trim().takeIf { it.isNotBlank() },
+            startTime = startTime.timeInMillis,
+            endTime = endTime.timeInMillis,
+            isAllDay = isAllDay,
+            recurrenceRule = rrule,
+            status = PendingStatus.MODIFIED,
+            suggestedCalendarId = selectedCalendarId
+        )
+
+        onPendingEventSave?.invoke(updated)
+        dismiss()
     }
 
     private fun buildRRule(): String {

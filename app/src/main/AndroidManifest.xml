@@ -33,7 +33,14 @@
             android:name=".MainActivity"
             android:exported="false"
             android:theme="@style/Theme.SmartCalendar" />
-            
+
+        <!-- AI Assistant Activity -->
+        <activity
+            android:name=".ui.ai.AIAssistantActivity"
+            android:exported="false"
+            android:theme="@style/Theme.SmartCalendar"
+            android:windowSoftInputMode="adjustResize" />
+
     </application>
 
 </manifest>
