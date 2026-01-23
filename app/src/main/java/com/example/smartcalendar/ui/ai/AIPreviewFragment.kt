@@ -17,6 +17,7 @@ import com.example.smartcalendar.data.model.PendingEvent
 import com.example.smartcalendar.data.repository.AuthRepository
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentAiPreviewBinding
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -35,6 +36,8 @@ class AIPreviewFragment : Fragment() {
     private var sessionId: String = ""
     private var selectedCalendar: LocalCalendar? = null
     private var calendars: List<LocalCalendar> = emptyList()
+    private val selectedEventIds = mutableSetOf<String>()
+    private var selectionMode = false
 
     var onEventClick: ((PendingEvent) -> Unit)? = null
     var onComplete: (() -> Unit)? = null
@@ -80,9 +83,13 @@ class AIPreviewFragment : Fragment() {
     }
 
     private fun setupRecyclerView() {
-        adapter = PendingEventAdapter { event ->
-            onEventClick?.invoke(event)
-        }
+        adapter = PendingEventAdapter(
+            onEventClick = { event -> onEventClick?.invoke(event) },
+            onEventLongClick = { event -> startSelection(event) },
+            isSelectionMode = { selectionMode },
+            isSelected = { id -> selectedEventIds.contains(id) },
+            onSelectionToggle = { event -> toggleSelection(event) }
+        )
 
         binding.eventsRecyclerView.layoutManager = LinearLayoutManager(context)
         binding.eventsRecyclerView.adapter = adapter
@@ -90,7 +97,11 @@ class AIPreviewFragment : Fragment() {
 
     private fun setupListeners() {
         binding.backButton.setOnClickListener {
-            onBack?.invoke()
+            if (selectionMode) {
+                exitSelectionMode()
+            } else {
+                onBack?.invoke()
+            }
         }
 
         // Calendar selection
@@ -103,6 +114,10 @@ class AIPreviewFragment : Fragment() {
 
         binding.rejectButton.setOnClickListener {
             rejectAll()
+        }
+
+        binding.deleteSelectedButton.setOnClickListener {
+            confirmDeleteSelected()
         }
     }
 
@@ -150,11 +165,19 @@ class AIPreviewFragment : Fragment() {
                 adapter.submitList(events)
 
                 val count = events.size
-                binding.eventCount.text = "$count event${if (count != 1) "s" else ""}"
+                if (selectionMode) {
+                    binding.eventCount.text = getString(
+                        R.string.ai_selected_count,
+                        selectedEventIds.size
+                    )
+                } else {
+                    binding.eventCount.text = "$count event${if (count != 1) "s" else ""}"
+                }
 
                 if (events.isEmpty()) {
                     binding.eventsRecyclerView.visibility = View.GONE
                     binding.emptyText.visibility = View.VISIBLE
+                    exitSelectionMode()
                 } else {
                     binding.eventsRecyclerView.visibility = View.VISIBLE
                     binding.emptyText.visibility = View.GONE
@@ -208,6 +231,72 @@ class AIPreviewFragment : Fragment() {
         lifecycleScope.launch {
             aiAssistant.updatePendingEvent(event)
         }
+    }
+
+    fun removePendingEvent(eventId: String) {
+        lifecycleScope.launch {
+            aiAssistant.deletePendingEvent(eventId)
+        }
+    }
+
+    private fun startSelection(event: PendingEvent) {
+        if (!selectionMode) {
+            selectionMode = true
+            selectedEventIds.clear()
+        }
+        selectedEventIds.add(event.id)
+        updateSelectionUi()
+    }
+
+    private fun toggleSelection(event: PendingEvent) {
+        if (!selectionMode) {
+            onEventClick?.invoke(event)
+            return
+        }
+
+        if (selectedEventIds.contains(event.id)) {
+            selectedEventIds.remove(event.id)
+        } else {
+            selectedEventIds.add(event.id)
+        }
+
+        if (selectedEventIds.isEmpty()) {
+            exitSelectionMode()
+        } else {
+            updateSelectionUi()
+        }
+    }
+
+    private fun exitSelectionMode() {
+        selectionMode = false
+        selectedEventIds.clear()
+        updateSelectionUi()
+    }
+
+    private fun updateSelectionUi() {
+        adapter.notifyDataSetChanged()
+        binding.deleteSelectedButton.visibility = if (selectionMode) View.VISIBLE else View.GONE
+        val count = adapter.currentList.size
+        if (selectionMode) {
+            binding.eventCount.text = getString(R.string.ai_selected_count, selectedEventIds.size)
+        } else {
+            binding.eventCount.text = "$count event${if (count != 1) "s" else ""}"
+        }
+    }
+
+    private fun confirmDeleteSelected() {
+        if (selectedEventIds.isEmpty()) return
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.ai_remove_change)
+            .setMessage(getString(R.string.ai_remove_selected_confirm, selectedEventIds.size))
+            .setPositiveButton(R.string.delete) { _, _ ->
+                lifecycleScope.launch {
+                    aiAssistant.deletePendingEvents(selectedEventIds.toList())
+                    exitSelectionMode()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     override fun onDestroyView() {

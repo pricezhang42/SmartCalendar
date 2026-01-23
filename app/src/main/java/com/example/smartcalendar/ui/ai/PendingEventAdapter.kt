@@ -19,7 +19,11 @@ import java.util.*
  * Adapter for displaying pending AI-extracted events.
  */
 class PendingEventAdapter(
-    private val onEventClick: (PendingEvent) -> Unit
+    private val onEventClick: (PendingEvent) -> Unit,
+    private val onEventLongClick: (PendingEvent) -> Unit,
+    private val isSelectionMode: () -> Boolean,
+    private val isSelected: (String) -> Boolean,
+    private val onSelectionToggle: (PendingEvent) -> Unit
 ) : ListAdapter<PendingEvent, PendingEventAdapter.ViewHolder>(DiffCallback()) {
 
     private val dateFormat = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
@@ -65,6 +69,22 @@ class PendingEventAdapter(
                     binding.actionText.background = drawable
                 }
 
+            val selectionMode = isSelectionMode()
+            val selected = isSelected(event.id)
+            binding.selectionCheck.visibility = if (selectionMode) View.VISIBLE else View.GONE
+            binding.selectionCheck.isChecked = selected
+            binding.selectionCheck.setOnClickListener {
+                onSelectionToggle(event)
+            }
+
+            val strokeWidth = if (selected) {
+                (2 * binding.root.context.resources.displayMetrics.density).toInt()
+            } else {
+                0
+            }
+            binding.eventCard.strokeWidth = strokeWidth
+            binding.eventCard.strokeColor = ContextCompat.getColor(binding.root.context, R.color.primary_blue)
+
             // Format date/time
             val dateTimeText = formatDateTime(event)
             binding.eventDateTime.text = dateTimeText
@@ -108,7 +128,15 @@ class PendingEventAdapter(
 
             // Click listener
             binding.eventCard.setOnClickListener {
-                onEventClick(event)
+                if (selectionMode) {
+                    onSelectionToggle(event)
+                } else {
+                    onEventClick(event)
+                }
+            }
+            binding.eventCard.setOnLongClickListener {
+                onEventLongClick(event)
+                true
             }
 
             if (event.operationType == PendingOperation.DELETE) {

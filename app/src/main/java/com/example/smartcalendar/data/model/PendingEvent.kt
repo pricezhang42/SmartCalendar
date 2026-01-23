@@ -60,6 +60,7 @@ data class PendingEvent(
     val endTime: Long? = null,
     val isAllDay: Boolean = false,
     val recurrenceRule: String? = null,
+    val exdate: String? = null,
     val confidence: Float = 0.0f,               // AI confidence score (0.0 - 1.0)
     val status: PendingStatus = PendingStatus.PENDING,
     val suggestedCalendarId: String? = null,
@@ -91,6 +92,7 @@ data class PendingEvent(
             dtEnd = end,
             allDay = isAllDay,
             rrule = recurrenceRule,
+            exdate = exdate,
             color = color,
             syncStatus = SyncStatus.PENDING
         )

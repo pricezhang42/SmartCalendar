@@ -25,6 +25,8 @@ data class ExtractedEvent(
     val endTime: String? = null,         // HH:MM format (24h)
     val isAllDay: Boolean? = null,
     val recurrence: String? = null,      // Natural language recurrence
+    val recurrenceRule: String? = null,  // RRULE format if available
+    val exceptionDates: List<String>? = null, // YYYY-MM-DD dates excluded
     val confidence: Float = 0.0f,
     val action: AIAction = AIAction.CREATE,
     val targetEventId: String? = null,

@@ -43,6 +43,9 @@ class AICalendarAssistant private constructor(
     private val pendingEventDao = database.pendingEventDao()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.US)
+    private val exdateFormatUtc = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
 
     /**
      * Process text input and create pending events for review.
@@ -272,6 +275,14 @@ class AICalendarAssistant private constructor(
     }
 
     /**
+     * Delete multiple pending events by id.
+     */
+    suspend fun deletePendingEvents(eventIds: List<String>) = withContext(Dispatchers.IO) {
+        if (eventIds.isEmpty()) return@withContext
+        pendingEventDao.deleteByIds(eventIds)
+    }
+
+    /**
      * Clear all pending events for a session.
      */
     suspend fun clearSession(sessionId: String) = withContext(Dispatchers.IO) {
@@ -294,6 +305,7 @@ class AICalendarAssistant private constructor(
         instanceStartTime: Long?
     ): PendingEvent {
         val (startTime, endTime) = parseEventTimes(extracted)
+        val rrule = extracted.recurrenceRule ?: parseRecurrenceToRRule(extracted.recurrence)
 
         return PendingEvent(
             sessionId = sessionId,
@@ -304,7 +316,8 @@ class AICalendarAssistant private constructor(
             startTime = startTime,
             endTime = endTime,
             isAllDay = extracted.isAllDay ?: false,
-            recurrenceRule = parseRecurrenceToRRule(extracted.recurrence),
+            recurrenceRule = rrule,
+            exdate = buildExdate(extracted.exceptionDates),
             confidence = extracted.confidence,
             sourceType = inputType,
             rawInput = rawInput,
@@ -498,6 +511,8 @@ class AICalendarAssistant private constructor(
         if (recurrence.isNullOrBlank()) return null
 
         val lower = recurrence.lowercase()
+        val untilDate = parseUntilDate(lower)
+        val untilPart = untilDate?.let { ";UNTIL=$it" } ?: ""
         return when {
             lower.contains("daily") || lower.contains("every day") -> "FREQ=DAILY"
             lower.contains("weekly") || lower.contains("every week") -> {
@@ -511,24 +526,63 @@ class AICalendarAssistant private constructor(
                 if (lower.contains("sunday") || lower.contains("sun")) days.add("SU")
 
                 if (days.isNotEmpty()) {
-                    "FREQ=WEEKLY;BYDAY=${days.joinToString(",")}"
+                    "FREQ=WEEKLY;BYDAY=${days.joinToString(",")}$untilPart"
                 } else {
-                    "FREQ=WEEKLY"
+                    "FREQ=WEEKLY$untilPart"
                 }
             }
-            lower.contains("monthly") || lower.contains("every month") -> "FREQ=MONTHLY"
-            lower.contains("yearly") || lower.contains("every year") || lower.contains("annually") -> "FREQ=YEARLY"
-            lower.contains("every monday") -> "FREQ=WEEKLY;BYDAY=MO"
-            lower.contains("every tuesday") -> "FREQ=WEEKLY;BYDAY=TU"
-            lower.contains("every wednesday") -> "FREQ=WEEKLY;BYDAY=WE"
-            lower.contains("every thursday") -> "FREQ=WEEKLY;BYDAY=TH"
-            lower.contains("every friday") -> "FREQ=WEEKLY;BYDAY=FR"
-            lower.contains("every saturday") -> "FREQ=WEEKLY;BYDAY=SA"
-            lower.contains("every sunday") -> "FREQ=WEEKLY;BYDAY=SU"
-            lower.contains("weekday") || lower.contains("weekdays") -> "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
-            lower.contains("weekend") -> "FREQ=WEEKLY;BYDAY=SA,SU"
+            lower.contains("monthly") || lower.contains("every month") -> "FREQ=MONTHLY$untilPart"
+            lower.contains("yearly") || lower.contains("every year") || lower.contains("annually") -> "FREQ=YEARLY$untilPart"
+            lower.contains("every monday") -> "FREQ=WEEKLY;BYDAY=MO$untilPart"
+            lower.contains("every tuesday") -> "FREQ=WEEKLY;BYDAY=TU$untilPart"
+            lower.contains("every wednesday") -> "FREQ=WEEKLY;BYDAY=WE$untilPart"
+            lower.contains("every thursday") -> "FREQ=WEEKLY;BYDAY=TH$untilPart"
+            lower.contains("every friday") -> "FREQ=WEEKLY;BYDAY=FR$untilPart"
+            lower.contains("every saturday") -> "FREQ=WEEKLY;BYDAY=SA$untilPart"
+            lower.contains("every sunday") -> "FREQ=WEEKLY;BYDAY=SU$untilPart"
+            lower.contains("weekday") || lower.contains("weekdays") -> "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR$untilPart"
+            lower.contains("weekend") -> "FREQ=WEEKLY;BYDAY=SA,SU$untilPart"
             else -> null
         }
+    }
+
+    private fun buildExdate(exceptionDates: List<String>?): String? {
+        if (exceptionDates.isNullOrEmpty()) return null
+        val parts = exceptionDates.mapNotNull { dateStr ->
+            parseDateToUtcEndOfDay(dateStr.trim(), endOfDay = false)?.let { exdateFormatUtc.format(it) }
+        }
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(",")
+    }
+
+    private fun parseUntilDate(text: String): String? {
+        val regex = Regex("\\b(\\d{4}-\\d{2}-\\d{2})\\b")
+        val match = regex.find(text) ?: return null
+        val endOfDay = parseDateToUtcEndOfDay(match.groupValues[1], endOfDay = true) ?: return null
+        return exdateFormatUtc.format(endOfDay)
+    }
+
+    private fun parseDateToUtcEndOfDay(dateStr: String, endOfDay: Boolean): Date? {
+        val parts = dateStr.split("-")
+        if (parts.size != 3) return null
+        val year = parts[0].toIntOrNull() ?: return null
+        val month = parts[1].toIntOrNull() ?: return null
+        val day = parts[2].toIntOrNull() ?: return null
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month - 1)
+            set(Calendar.DAY_OF_MONTH, day)
+            if (endOfDay) {
+                set(Calendar.HOUR_OF_DAY, 23)
+                set(Calendar.MINUTE, 59)
+                set(Calendar.SECOND, 59)
+            } else {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+            }
+            set(Calendar.MILLISECOND, 0)
+        }
+        return cal.time
     }
 
     private fun mergePendingIntoExisting(
@@ -552,7 +606,8 @@ class AICalendarAssistant private constructor(
             dtStart = start,
             dtEnd = end,
             allDay = pending.isAllDay,
-            rrule = pending.recurrenceRule,
+            rrule = pending.recurrenceRule ?: existing.rrule,
+            exdate = pending.exdate ?: existing.exdate,
             color = color,
             lastModified = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),

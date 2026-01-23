@@ -68,6 +68,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
     // For AI pending events
     var onPendingEventSave: ((PendingEvent) -> Unit)? = null
+    var onPendingEventDelete: ((String) -> Unit)? = null
 
     companion object {
         private const val ARG_EVENT_UID = "event_uid"
@@ -200,6 +201,15 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
         binding.modalTitle.text = getString(R.string.ai_preview_title)
 
+        event.recurrenceScope?.let { scope ->
+            binding.recurrenceScopeLabel.visibility = View.VISIBLE
+            binding.recurrenceScopeLabel.text = when (scope) {
+                PendingRecurrenceScope.THIS_INSTANCE -> getString(R.string.ai_scope_this_instance)
+                PendingRecurrenceScope.THIS_AND_FOLLOWING -> getString(R.string.ai_scope_this_and_following)
+                PendingRecurrenceScope.ALL -> getString(R.string.ai_scope_all)
+            }
+        }
+
         // Populate fields from pending event
         binding.titleEditText.setText(event.title)
         highlightField(binding.titleEditText)
@@ -246,8 +256,9 @@ class EventModalFragment : BottomSheetDialogFragment() {
         // Calendar
         event.suggestedCalendarId?.let { selectedCalendarId = it }
 
-        // Don't show delete button for pending events
-        binding.deleteButton.visibility = View.GONE
+        // Allow removing pending change
+        binding.deleteButton.visibility = View.VISIBLE
+        binding.deleteButton.text = getString(R.string.ai_remove_change)
 
         // Setup days of week
         if (selectedDaysOfWeek.isEmpty()) {
@@ -420,7 +431,13 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
         binding.cancelButton.setOnClickListener { dismiss() }
         binding.saveButton.setOnClickListener { saveEvent() }
-        binding.deleteButton.setOnClickListener { deleteEvent() }
+        binding.deleteButton.setOnClickListener {
+            if (isAIMode && pendingEvent != null) {
+                confirmRemovePending()
+            } else {
+                deleteEvent()
+            }
+        }
     }
     
     private fun showRepeatEndPicker() {
@@ -676,7 +693,8 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 startTime.timeInMillis
             } else {
                 original.instanceStartTime
-            }
+            },
+            exdate = original.exdate
         )
 
         onPendingEventSave?.invoke(updated)
@@ -746,6 +764,19 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 .setNegativeButton("Cancel", null)
                 .show()
         }
+    }
+
+    private fun confirmRemovePending() {
+        val event = pendingEvent ?: return
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.ai_remove_change)
+            .setMessage(R.string.ai_remove_change_confirm)
+            .setPositiveButton(R.string.delete) { _, _ ->
+                onPendingEventDelete?.invoke(event.id)
+                dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun showRecurringDeleteDialog() {

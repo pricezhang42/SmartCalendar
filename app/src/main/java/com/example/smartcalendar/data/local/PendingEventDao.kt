@@ -29,6 +29,9 @@ interface PendingEventDao {
     @Query("DELETE FROM pending_events WHERE sessionId = :sessionId")
     suspend fun deleteBySession(sessionId: String)
 
+    @Query("DELETE FROM pending_events WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
+
     @Query("DELETE FROM pending_events WHERE userId = :userId")
     suspend fun deleteByUser(userId: String)
 

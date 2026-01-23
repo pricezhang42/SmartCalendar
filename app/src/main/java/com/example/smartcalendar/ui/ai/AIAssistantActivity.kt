@@ -74,6 +74,13 @@ class AIAssistantActivity : AppCompatActivity() {
             }
             Toast.makeText(this, "Event updated", Toast.LENGTH_SHORT).show()
         }
+        modal.onPendingEventDelete = { eventId ->
+            val previewFragment = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
+            if (previewFragment is AIPreviewFragment) {
+                previewFragment.removePendingEvent(eventId)
+            }
+            Toast.makeText(this, "Change removed", Toast.LENGTH_SHORT).show()
+        }
         modal.show(supportFragmentManager, "event_modal")
     }
 

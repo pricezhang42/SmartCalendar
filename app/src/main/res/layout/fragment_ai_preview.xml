@@ -39,6 +39,15 @@
             android:textSize="14sp"
             android:textColor="@android:color/darker_gray" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/deleteSelectedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="@string/ai_delete_selected"
+            android:visibility="gone"
+            style="@style/Widget.MaterialComponents.Button.TextButton" />
+
     </LinearLayout>
 
     <View

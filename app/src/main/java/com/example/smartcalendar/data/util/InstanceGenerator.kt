@@ -112,21 +112,45 @@ object InstanceGenerator {
         }
     }
     
-    private fun parseExdates(exdate: String?): Set<Long> {
-        if (exdate.isNullOrEmpty()) return emptySet()
-        val dates = mutableSetOf<Long>()
-        exdate.split(",").forEach { dateStr ->
-            parseDateTime(dateStr.trim())?.let { dates.add(normalizeToDay(it)) }
+    private data class ExdateSets(
+        val localDays: Set<Long>,
+        val utcDays: Set<Long>
+    )
+
+    private fun parseExdates(exdate: String?): ExdateSets {
+        if (exdate.isNullOrEmpty()) return ExdateSets(emptySet(), emptySet())
+        val localDays = mutableSetOf<Long>()
+        val utcDays = mutableSetOf<Long>()
+        exdate.split(",").forEach { raw ->
+            val dateStr = raw.trim()
+            val isUtc = dateStr.endsWith("Z")
+            parseDateTime(dateStr)?.let { time ->
+                if (isUtc) {
+                    utcDays.add(normalizeToDayUtc(time))
+                } else {
+                    localDays.add(normalizeToDay(time))
+                }
+            }
         }
-        return dates
+        return ExdateSets(localDays, utcDays)
     }
     
-    private fun isExcluded(time: Long, exdates: Set<Long>): Boolean {
-        return exdates.contains(normalizeToDay(time))
+    private fun isExcluded(time: Long, exdates: ExdateSets): Boolean {
+        return exdates.localDays.contains(normalizeToDay(time)) ||
+            exdates.utcDays.contains(normalizeToDayUtc(time))
     }
     
     private fun normalizeToDay(time: Long): Long {
         val cal = Calendar.getInstance().apply { timeInMillis = time }
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
+
+    private fun normalizeToDayUtc(time: Long): Long {
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = time }
         cal.set(Calendar.HOUR_OF_DAY, 0)
         cal.set(Calendar.MINUTE, 0)
         cal.set(Calendar.SECOND, 0)

@@ -140,6 +140,8 @@ Instructions:
 9. For UPDATE, change date/time fields instead of adding phrases like "postponed" to description
 10. For recurring events, set scope to THIS_INSTANCE, THIS_AND_FOLLOWING, or ALL
 11. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
+12. If you can infer an RRULE, set recurrenceRule (e.g., "FREQ=WEEKLY;BYDAY=MO;UNTIL=20260330T235959Z")
+13. If there are exceptions, list them in exceptionDates (YYYY-MM-DD) and do not put them in description
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
 {
@@ -153,6 +155,8 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
       "endTime": "HH:MM or null",
       "isAllDay": true,
       "recurrence": "Natural language recurrence or null",
+      "recurrenceRule": "RRULE or null",
+      "exceptionDates": ["YYYY-MM-DD", "YYYY-MM-DD"],
       "confidence": 0.95,
       "action": "CREATE|UPDATE|DELETE",
       "targetEventId": "required when UPDATE or DELETE",
@@ -194,6 +198,8 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
       "endTime": "HH:MM or null",
       "isAllDay": false,
       "recurrence": "Natural language recurrence or null",
+      "recurrenceRule": "RRULE or null",
+      "exceptionDates": ["YYYY-MM-DD", "YYYY-MM-DD"],
       "confidence": 0.95
     }
   ]

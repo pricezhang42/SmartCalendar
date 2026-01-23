@@ -139,6 +139,14 @@
     <string name="ai_action_update">Update</string>
     <string name="ai_action_delete">Delete</string>
     <string name="close">Close</string>
+    <string name="ai_delete_selected">Delete Selected</string>
+    <string name="ai_remove_change">Remove Change</string>
+    <string name="ai_remove_change_confirm">Remove this change from review?</string>
+    <string name="ai_scope_this_instance">This event</string>
+    <string name="ai_scope_this_and_following">This and following events</string>
+    <string name="ai_scope_all">All events</string>
+    <string name="ai_selected_count">%d selected</string>
+    <string name="ai_remove_selected_confirm">Remove %d change(s) from review?</string>
     <string name="ai_event_approved">Event added to calendar</string>
     <string name="ai_events_approved">%d events added to calendar</string>
     <string name="ai_changed_field">AI suggested</string>

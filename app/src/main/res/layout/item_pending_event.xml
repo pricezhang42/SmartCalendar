@@ -22,6 +22,13 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
+            <com.google.android.material.checkbox.MaterialCheckBox
+                android:id="@+id/selectionCheck"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/eventTitle"
                 android:layout_width="0dp"

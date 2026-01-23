@@ -21,7 +21,7 @@ import com.example.smartcalendar.data.model.SyncStatus
  */
 @Database(
     entities = [LocalCalendar::class, ICalEvent::class, PendingEvent::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
