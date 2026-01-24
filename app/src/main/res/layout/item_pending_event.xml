@@ -142,6 +142,33 @@
 
         </LinearLayout>
 
+        <!-- Exceptions (optional) -->
+        <LinearLayout
+            android:id="@+id/exceptionsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@android:drawable/ic_delete"
+                android:tint="@android:color/darker_gray"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:id="@+id/eventExceptions"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:textSize="14sp"
+                android:textColor="@android:color/darker_gray" />
+
+        </LinearLayout>
+
         <!-- Tap to edit hint -->
         <TextView
             android:id="@+id/editHintText"

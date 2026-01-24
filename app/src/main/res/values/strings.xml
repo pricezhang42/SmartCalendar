@@ -147,6 +147,10 @@
     <string name="ai_scope_all">All events</string>
     <string name="ai_selected_count">%d selected</string>
     <string name="ai_remove_selected_confirm">Remove %d change(s) from review?</string>
+    <string name="label_exceptions">Exceptions</string>
+    <string name="add_exception">Add exception</string>
+    <string name="remove_exception">Remove</string>
+    <string name="ai_exceptions_count">Exceptions: %d</string>
     <string name="ai_event_approved">Event added to calendar</string>
     <string name="ai_events_approved">%d events added to calendar</string>
     <string name="ai_changed_field">AI suggested</string>

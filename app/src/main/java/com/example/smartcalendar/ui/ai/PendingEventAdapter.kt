@@ -105,6 +105,23 @@ class PendingEventAdapter(
                 binding.recurrenceContainer.visibility = View.GONE
             }
 
+            // Exceptions
+            val exceptionCount = event.exdate
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?.size
+                ?: 0
+            if (exceptionCount > 0) {
+                binding.exceptionsContainer.visibility = View.VISIBLE
+                binding.eventExceptions.text = binding.root.context.getString(
+                    R.string.ai_exceptions_count,
+                    exceptionCount
+                )
+            } else {
+                binding.exceptionsContainer.visibility = View.GONE
+            }
+
             // Confidence indicator
             val confidencePercent = (event.confidence * 100).toInt()
             binding.confidenceText.text = "$confidencePercent%"

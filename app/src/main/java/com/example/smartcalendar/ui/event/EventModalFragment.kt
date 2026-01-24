@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -52,6 +53,14 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private var repeatFrequency = "WEEKLY"
     private var repeatInterval = 1
     private var reminderMinutes: Int? = null
+    private val exceptionDatesUtc = mutableSetOf<Long>()
+
+    private val exdateFormatUtc = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
+    private val exceptionDisplayFormat = SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
 
     // Repeat end options
     private var repeatEndType = "NEVER" // NEVER, COUNT, UNTIL
@@ -152,6 +161,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
             // Parse RRULE for repeat options
             event.rrule?.let { parseRRule(it) }
+            parseExdates(event.exdate)
 
             // Set modal title to event title
             binding.modalTitle.text = event.summary
@@ -190,6 +200,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
         setupDayOfWeekChips()
         updateRepeatEndUI()
+        renderExceptions()
     }
 
     /**
@@ -252,6 +263,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
             binding.repeatOptionsContainer.visibility = View.VISIBLE
             parseRRule(rrule)
         }
+        parseExdates(event.exdate)
 
         // Calendar
         event.suggestedCalendarId?.let { selectedCalendarId = it }
@@ -278,6 +290,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
         setupDayOfWeekChips()
         updateRepeatEndUI()
         updateCalendarDisplay()
+        renderExceptions()
 
         if (event.operationType == PendingOperation.DELETE) {
             binding.modalTitle.text = getString(R.string.ai_action_delete)
@@ -428,6 +441,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 repeatCount = s.toString().toIntOrNull() ?: 1
             }
         })
+        binding.addExceptionButton.setOnClickListener { showExceptionDatePicker() }
 
         binding.cancelButton.setOnClickListener { dismiss() }
         binding.saveButton.setOnClickListener { saveEvent() }
@@ -500,6 +514,75 @@ class EventModalFragment : BottomSheetDialogFragment() {
         binding.chipYearly.isChecked = repeatFrequency == "YEARLY"
         // Show/hide days of week container
         binding.repeatOnContainer.visibility = if (repeatFrequency == "WEEKLY") View.VISIBLE else View.GONE
+    }
+
+    private fun parseExdates(exdate: String?) {
+        exceptionDatesUtc.clear()
+        if (exdate.isNullOrBlank()) return
+        exdate.split(",").forEach { raw ->
+            val dateStr = raw.trim()
+            parseDateTime(dateStr)?.let { time ->
+                exceptionDatesUtc.add(normalizeUtcDay(time))
+            }
+        }
+    }
+
+    private fun renderExceptions() {
+        binding.exceptionsContainer.removeAllViews()
+        if (exceptionDatesUtc.isEmpty()) return
+
+        exceptionDatesUtc.sorted().forEach { utcMillis ->
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = (6 * resources.displayMetrics.density).toInt()
+                }
+            }
+
+            val label = TextView(requireContext()).apply {
+                text = exceptionDisplayFormat.format(Date(utcMillis))
+                textSize = 14f
+                setTextColor(android.graphics.Color.BLACK)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            row.addView(label)
+
+            val remove = TextView(requireContext()).apply {
+                text = getString(R.string.remove_exception)
+                textSize = 12f
+                setTextColor(ContextCompat.getColor(requireContext(), R.color.ai_confidence_low))
+                setOnClickListener {
+                    exceptionDatesUtc.remove(utcMillis)
+                    renderExceptions()
+                }
+            }
+            row.addView(remove)
+
+            binding.exceptionsContainer.addView(row)
+        }
+    }
+
+    private fun showExceptionDatePicker() {
+        val cal = Calendar.getInstance()
+        DatePickerDialog(requireContext(), { _, year, month, day ->
+            val utcMillis = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month)
+                set(Calendar.DAY_OF_MONTH, day)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            if (!exceptionDatesUtc.contains(utcMillis)) {
+                exceptionDatesUtc.add(utcMillis)
+                renderExceptions()
+            }
+        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
     }
     
     private fun showCalendarPicker() {
@@ -639,6 +722,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
             val duration = if (repeatEnabled) ICalEvent.toDurationString(endTime.timeInMillis - startTime.timeInMillis) else null
             val calendarColor = LocalCalendarRepository.getInstance().getCalendar(selectedCalendarId)?.color
                 ?: android.graphics.Color.parseColor("#4285F4")
+            val exdate = buildExdateString()
 
             val event = ICalEvent(
                 uid = existingEvent?.uid ?: UUID.randomUUID().toString(),
@@ -651,7 +735,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 duration = duration,
                 allDay = isAllDay,
                 rrule = rrule,
-                exdate = existingEvent?.exdate,
+                exdate = exdate,
                 color = calendarColor,
                 originalId = existingEvent?.originalId
             )
@@ -676,6 +760,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
             return
         }
         val rrule = if (repeatEnabled) buildRRule() else null
+        val exdate = buildExdateString()
 
         val updated = original.copy(
             title = title,
@@ -694,7 +779,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
             } else {
                 original.instanceStartTime
             },
-            exdate = original.exdate
+            exdate = exdate
         )
 
         onPendingEventSave?.invoke(updated)
@@ -719,6 +804,13 @@ class EventModalFragment : BottomSheetDialogFragment() {
             }
         }
         return sb.toString()
+    }
+
+    private fun buildExdateString(): String? {
+        if (exceptionDatesUtc.isEmpty()) return null
+        return exceptionDatesUtc
+            .sorted()
+            .joinToString(",") { exdateFormatUtc.format(Date(it)) }
     }
 
     private fun showRecurringEditDialog(event: ICalEvent) {
@@ -798,5 +890,29 @@ class EventModalFragment : BottomSheetDialogFragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    private fun parseDateTime(str: String): Long? {
+        return try {
+            val format = if (str.contains("T")) {
+                SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
+                    timeZone = TimeZone.getTimeZone("UTC")
+                }
+            } else {
+                SimpleDateFormat("yyyyMMdd", Locale.US)
+            }
+            format.parse(str)?.time
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun normalizeUtcDay(time: Long): Long {
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = time }
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
     }
 }
