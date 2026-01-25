@@ -41,10 +41,10 @@ class GeminiProvider : AIService {
             expectSuccess = false
             engine {
                 config {
-                    callTimeout(30, TimeUnit.SECONDS)
-                    connectTimeout(15, TimeUnit.SECONDS)
-                    readTimeout(30, TimeUnit.SECONDS)
-                    writeTimeout(30, TimeUnit.SECONDS)
+                    callTimeout(60, TimeUnit.SECONDS)
+                    connectTimeout(20, TimeUnit.SECONDS)
+                    readTimeout(60, TimeUnit.SECONDS)
+                    writeTimeout(60, TimeUnit.SECONDS)
                 }
             }
         }
@@ -145,6 +145,7 @@ Instructions:
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
 {
+  "message": "Short natural-language summary and any follow-up question",
   "events": [
     {
       "title": "Event title",
@@ -188,6 +189,7 @@ Apply the instruction to the relevant event(s) and return the modified events.
 
 Output ONLY a valid JSON object (no markdown, no code blocks):
 {
+  "message": "Short natural-language summary and any follow-up question",
   "events": [
     {
       "title": "Event title",
@@ -220,7 +222,8 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
                     events = json.decodeFromString(
                         kotlinx.serialization.builtins.ListSerializer(ExtractedEvent.serializer()),
                         cleanedResponse
-                    )
+                    ),
+                    message = null
                 )
             } else {
                 json.decodeFromString<GeminiEventResponse>(cleanedResponse)
@@ -236,6 +239,7 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
                 AIResponse(
                     events = parsed.events,
                     confidence = avgConfidence,
+                    message = parsed.message,
                     rawResponse = responseText
                 )
             )

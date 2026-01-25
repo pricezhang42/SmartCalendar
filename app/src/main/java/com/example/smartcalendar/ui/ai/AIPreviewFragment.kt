@@ -19,6 +19,7 @@ import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentAiPreviewBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -34,6 +35,7 @@ class AIPreviewFragment : Fragment() {
     private lateinit var adapter: PendingEventAdapter
 
     private var sessionId: String = ""
+    private var eventsJob: Job? = null
     private var selectedCalendar: LocalCalendar? = null
     private var calendars: List<LocalCalendar> = emptyList()
     private val selectedEventIds = mutableSetOf<String>()
@@ -79,7 +81,9 @@ class AIPreviewFragment : Fragment() {
         setupRecyclerView()
         setupListeners()
         loadCalendars()
-        observeEvents()
+        if (sessionId.isNotBlank()) {
+            observeEvents(sessionId)
+        }
     }
 
     private fun setupRecyclerView() {
@@ -159,8 +163,9 @@ class AIPreviewFragment : Fragment() {
             .show()
     }
 
-    private fun observeEvents() {
-        lifecycleScope.launch {
+    private fun observeEvents(sessionId: String) {
+        eventsJob?.cancel()
+        eventsJob = lifecycleScope.launch {
             aiAssistant.getPendingEvents(sessionId).collectLatest { events ->
                 adapter.submitList(events)
 
@@ -284,6 +289,14 @@ class AIPreviewFragment : Fragment() {
         }
     }
 
+    fun updateSession(newSessionId: String) {
+        if (newSessionId == sessionId) return
+        sessionId = newSessionId
+        if (_binding == null) return
+        exitSelectionMode()
+        observeEvents(newSessionId)
+    }
+
     private fun confirmDeleteSelected() {
         if (selectedEventIds.isEmpty()) return
         MaterialAlertDialogBuilder(requireContext())
@@ -301,6 +314,7 @@ class AIPreviewFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        eventsJob?.cancel()
         _binding = null
     }
 }

@@ -53,7 +53,7 @@ class AICalendarAssistant private constructor(
      * @param userId Current user ID
      * @return Session ID for the created pending events, or error message
      */
-    suspend fun processTextInput(text: String, userId: String): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun processTextInput(text: String, userId: String): Result<AIProcessingOutput> = withContext(Dispatchers.IO) {
         Log.d(TAG, "Processing text input: $text")
 
         val currentDate = dateFormat.format(Date())
@@ -129,7 +129,13 @@ class AICalendarAssistant private constructor(
                 pendingEventDao.insertAll(pendingEvents)
                 Log.d(TAG, "Created ${pendingEvents.size} pending events with session: $sessionId")
 
-                Result.success(sessionId)
+                Result.success(
+                    AIProcessingOutput(
+                        sessionId = sessionId,
+                        message = result.response.message,
+                        rawResponse = result.response.rawResponse
+                    )
+                )
             }
             is ProcessingResult.Error -> {
                 Log.e(TAG, "AI processing error: ${result.message}")
@@ -157,6 +163,62 @@ class AICalendarAssistant private constructor(
      */
     suspend fun updatePendingEvent(event: PendingEvent) = withContext(Dispatchers.IO) {
         pendingEventDao.update(event.copy(status = PendingStatus.MODIFIED))
+    }
+
+    /**
+     * Refine existing pending events for a session using a follow-up instruction.
+     */
+    suspend fun refineSessionEvents(
+        sessionId: String,
+        instruction: String,
+        userId: String
+    ): Result<AIProcessingOutput> = withContext(Dispatchers.IO) {
+        val pending = pendingEventDao.getBySessionList(sessionId)
+        if (pending.isEmpty()) {
+            return@withContext Result.failure(Exception("No pending events to refine"))
+        }
+
+        val baseEvents = pending.sortedBy { it.createdAt }.map { toExtractedEvent(it) }
+        when (val result = aiService.refineEvents(baseEvents, instruction)) {
+            is ProcessingResult.Success -> {
+                val refined = result.response.events
+                val merged = refined.mapIndexed { index, extracted ->
+                    val base = pending.getOrNull(index)
+                    mergeWithPendingBase(extracted, base)
+                }
+                pendingEventDao.deleteBySession(sessionId)
+
+                val rebuilt = merged.mapIndexed { index, extracted ->
+                    val base = pending.getOrNull(index)
+                    convertToPendingEvent(
+                        extracted = extracted,
+                        sessionId = sessionId,
+                        userId = userId,
+                        rawInput = instruction,
+                        inputType = InputType.TEXT,
+                        operationType = base?.operationType ?: PendingOperation.CREATE,
+                        targetEventId = base?.targetEventId,
+                        suggestedCalendarId = base?.suggestedCalendarId,
+                        recurrenceScope = base?.recurrenceScope,
+                        instanceStartTime = base?.instanceStartTime
+                    )
+                }
+
+                pendingEventDao.insertAll(rebuilt)
+
+                Result.success(
+                    AIProcessingOutput(
+                        sessionId = sessionId,
+                        message = result.response.message,
+                        rawResponse = result.response.rawResponse
+                    )
+                )
+            }
+            is ProcessingResult.Error -> {
+                Log.e(TAG, "AI refine error: ${result.message}")
+                Result.failure(Exception(result.message))
+            }
+        }
     }
 
     /**
@@ -452,6 +514,21 @@ class AICalendarAssistant private constructor(
         )
     }
 
+    private fun mergeWithPendingBase(extracted: ExtractedEvent, base: PendingEvent?): ExtractedEvent {
+        if (base == null) return extracted
+        return extracted.copy(
+            title = if (extracted.title.isBlank()) base.title else extracted.title,
+            description = extracted.description ?: base.description,
+            location = extracted.location ?: base.location,
+            date = extracted.date ?: base.startTime?.let { dateFormat.format(Date(it)) },
+            startTime = extracted.startTime ?: base.startTime?.let { timeFormat.format(Date(it)) },
+            endTime = extracted.endTime ?: base.endTime?.let { timeFormat.format(Date(it)) },
+            isAllDay = extracted.isAllDay ?: base.isAllDay,
+            recurrenceRule = extracted.recurrenceRule ?: base.recurrenceRule,
+            exceptionDates = extracted.exceptionDates ?: parseExceptionDates(base.exdate)
+        )
+    }
+
     private fun determineRecurrenceScope(
         extracted: ExtractedEvent,
         existing: ICalEvent
@@ -552,6 +629,64 @@ class AICalendarAssistant private constructor(
             parseDateToUtcEndOfDay(dateStr.trim(), endOfDay = false)?.let { exdateFormatUtc.format(it) }
         }
         return parts.takeIf { it.isNotEmpty() }?.joinToString(",")
+    }
+
+    private fun parseExceptionDates(exdate: String?): List<String>? {
+        if (exdate.isNullOrBlank()) return null
+        val results = mutableListOf<String>()
+        exdate.split(",").forEach { raw ->
+            val dateStr = raw.trim()
+            val time = parseExdateToUtcMillis(dateStr) ?: return@forEach
+            val day = dateFormat.format(Date(time))
+            results.add(day)
+        }
+        return results.takeIf { it.isNotEmpty() }
+    }
+
+    private fun parseExdateToUtcMillis(exdate: String): Long? {
+        return try {
+            val format = if (exdate.contains("T")) {
+                SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
+                    timeZone = TimeZone.getTimeZone("UTC")
+                }
+            } else {
+                SimpleDateFormat("yyyyMMdd", Locale.US).apply {
+                    timeZone = TimeZone.getTimeZone("UTC")
+                }
+            }
+            format.parse(exdate)?.time
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun toExtractedEvent(event: PendingEvent): ExtractedEvent {
+        val date = event.startTime?.let { dateFormat.format(Date(it)) }
+        val start = event.startTime?.let { timeFormat.format(Date(it)) }
+        val end = event.endTime?.let { timeFormat.format(Date(it)) }
+        return ExtractedEvent(
+            title = event.title,
+            description = event.description,
+            location = event.location,
+            date = date,
+            startTime = start,
+            endTime = end,
+            isAllDay = event.isAllDay,
+            recurrence = null,
+            recurrenceRule = event.recurrenceRule,
+            exceptionDates = parseExceptionDates(event.exdate),
+            confidence = event.confidence,
+            action = AIAction.UPDATE,
+            targetEventId = event.targetEventId,
+            scope = event.recurrenceScope?.let {
+                when (it) {
+                    PendingRecurrenceScope.THIS_INSTANCE -> AIRecurrenceScope.THIS_INSTANCE
+                    PendingRecurrenceScope.THIS_AND_FOLLOWING -> AIRecurrenceScope.THIS_AND_FOLLOWING
+                    PendingRecurrenceScope.ALL -> AIRecurrenceScope.ALL
+                }
+            },
+            instanceDate = event.instanceStartTime?.let { dateFormat.format(Date(it)) }
+        )
     }
 
     private fun parseUntilDate(text: String): String? {

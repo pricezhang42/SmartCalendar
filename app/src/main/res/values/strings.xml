@@ -124,11 +124,14 @@
 
     <!-- AI Assistant -->
     <string name="ai_assistant">Cali</string>
-    <string name="ai_input_hint">Describe your events…\n\nExamples:\n• Meeting with John tomorrow at 2pm\n• Weekly team standup every Monday at 9am\n• Dentist appointment next Friday 3pm</string>
+    <string name="ai_input_hint">Describe your events…</string>
     <string name="ai_process">Process</string>
+    <string name="ai_send">Send</string>
+    <string name="ai_review_changes">Review Changes</string>
     <string name="ai_processing">Processing…</string>
     <string name="ai_error">Failed to process</string>
     <string name="ai_no_events">No events found</string>
+    <string name="ai_review_ready">I prepared the changes. Want to review them?</string>
     <string name="ai_preview_title">Review Events</string>
     <string name="ai_approve_all">Approve All</string>
     <string name="ai_reject_all">Cancel</string>

@@ -9,6 +9,7 @@ data class AIResponse(
     val events: List<ExtractedEvent>,
     val confidence: Float,
     val warnings: List<String> = emptyList(),
+    val message: String? = null,
     val rawResponse: String = ""
 )
 
@@ -66,7 +67,14 @@ data class CalendarContextEvent(
  */
 @Serializable
 data class GeminiEventResponse(
-    val events: List<ExtractedEvent> = emptyList()
+    val events: List<ExtractedEvent> = emptyList(),
+    val message: String? = null
+)
+
+data class AIProcessingOutput(
+    val sessionId: String,
+    val message: String?,
+    val rawResponse: String
 )
 
 /**

@@ -16,52 +16,89 @@ import com.example.smartcalendar.ui.event.EventModalFragment
 class AIAssistantActivity : AppCompatActivity() {
 
     private var currentSessionId: String? = null
+    private var inputFragment: AIInputFragment? = null
+    private var previewFragment: AIPreviewFragment? = null
+
+    companion object {
+        private const val TAG_INPUT = "ai_input"
+        private const val TAG_PREVIEW = "ai_preview"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_ai_assistant)
 
+        currentSessionId = savedInstanceState?.getString("session_id")
+        inputFragment = supportFragmentManager.findFragmentByTag(TAG_INPUT) as? AIInputFragment
+        previewFragment = supportFragmentManager.findFragmentByTag(TAG_PREVIEW) as? AIPreviewFragment
+
         if (savedInstanceState == null) {
             showInputFragment()
+        } else {
+            updateVisibleFragment()
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("session_id", currentSessionId)
+        super.onSaveInstanceState(outState)
     }
 
     private fun showInputFragment() {
-        val inputFragment = AIInputFragment().apply {
-            onSessionCreated = { sessionId ->
-                currentSessionId = sessionId
-                showPreviewFragment(sessionId)
+        if (inputFragment == null) {
+            inputFragment = AIInputFragment().apply {
+                onSessionCreated = { sessionId ->
+                    currentSessionId = sessionId
+                    ensurePreviewFragment(sessionId)
+                }
+                onReviewRequested = { sessionId ->
+                    currentSessionId = sessionId
+                    showPreviewFragment(sessionId)
+                }
+                onClose = {
+                    finish()
+                }
             }
-            onClose = {
-                finish()
-            }
+            supportFragmentManager.beginTransaction()
+                .add(R.id.fragmentContainer, inputFragment!!, TAG_INPUT)
+                .commit()
+        } else {
+            val transaction = supportFragmentManager.beginTransaction()
+            transaction.show(inputFragment!!)
+            previewFragment?.let { transaction.hide(it) }
+            transaction.commit()
         }
+    }
 
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.fragmentContainer, inputFragment)
-            .commit()
+    private fun ensurePreviewFragment(sessionId: String) {
+        if (previewFragment == null) {
+            previewFragment = AIPreviewFragment.newInstance(sessionId).apply {
+                onEventClick = { event ->
+                    showEventEditModal(event)
+                }
+                onComplete = {
+                    setResult(RESULT_OK)
+                    finish()
+                }
+                onBack = {
+                    showInputFragment()
+                }
+            }
+            supportFragmentManager.beginTransaction()
+                .add(R.id.fragmentContainer, previewFragment!!, TAG_PREVIEW)
+                .hide(previewFragment!!)
+                .commit()
+        } else {
+            previewFragment?.updateSession(sessionId)
+        }
     }
 
     private fun showPreviewFragment(sessionId: String) {
-        val previewFragment = AIPreviewFragment.newInstance(sessionId).apply {
-            onEventClick = { event ->
-                showEventEditModal(event)
-            }
-            onComplete = {
-                // Events approved or rejected
-                setResult(RESULT_OK)
-                finish()
-            }
-            onBack = {
-                // Go back to input
-                showInputFragment()
-            }
-        }
-
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.fragmentContainer, previewFragment)
-            .addToBackStack("preview")
-            .commit()
+        ensurePreviewFragment(sessionId)
+        val transaction = supportFragmentManager.beginTransaction()
+        inputFragment?.let { transaction.hide(it) }
+        previewFragment?.let { transaction.show(it) }
+        transaction.commit()
     }
 
     private fun showEventEditModal(event: PendingEvent) {
@@ -84,12 +121,22 @@ class AIAssistantActivity : AppCompatActivity() {
         modal.show(supportFragmentManager, "event_modal")
     }
 
+    private fun updateVisibleFragment() {
+        val showingPreview = previewFragment?.isVisible == true
+        val sessionId = currentSessionId
+        if (showingPreview && sessionId != null) {
+            showPreviewFragment(sessionId)
+        } else {
+            showInputFragment()
+        }
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (supportFragmentManager.backStackEntryCount > 0) {
-            supportFragmentManager.popBackStack()
-        } else {
-            super.onBackPressed()
+        if (previewFragment?.isVisible == true) {
+            showInputFragment()
+            return
         }
+        super.onBackPressed()
     }
 }
