@@ -1,11 +1,13 @@
 package com.example.smartcalendar.ui.ai
 
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.smartcalendar.BuildConfig
 import com.example.smartcalendar.R
@@ -28,6 +30,45 @@ class AIInputFragment : Fragment() {
 
     private var currentSessionId: String? = null
     private val messages = mutableListOf<ChatMessage>()
+
+    private val attachmentPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val contentResolver = requireContext().contentResolver
+        val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
+        val displayName = getDisplayName(uri) ?: getString(R.string.ai_attachment)
+
+        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        if (bytes == null) {
+            addMessage(
+                ChatMessage(
+                    role = ChatRole.ASSISTANT,
+                    text = getString(R.string.ai_attachment_failed),
+                    isError = true
+                )
+            )
+            return@registerForActivityResult
+        }
+
+        if (bytes.size > MAX_ATTACHMENT_BYTES) {
+            addMessage(
+                ChatMessage(
+                    role = ChatRole.ASSISTANT,
+                    text = getString(R.string.ai_attachment_too_large),
+                    isError = true
+                )
+            )
+            return@registerForActivityResult
+        }
+
+        val isImage = mimeType.startsWith("image/")
+        val label = if (isImage) {
+            getString(R.string.ai_attached_image, displayName)
+        } else {
+            getString(R.string.ai_attached_document, displayName)
+        }
+        addMessage(ChatMessage(ChatRole.USER, label))
+        processAttachment(bytes, mimeType, displayName, isImage)
+    }
 
     var onSessionCreated: ((String) -> Unit)? = null
     var onReviewRequested: ((String) -> Unit)? = null
@@ -66,6 +107,10 @@ class AIInputFragment : Fragment() {
     private fun setupListeners() {
         binding.closeButton.setOnClickListener {
             onClose?.invoke()
+        }
+
+        binding.attachButton.setOnClickListener {
+            attachmentPicker.launch(ATTACHMENT_MIME_TYPES)
         }
 
         binding.reviewButton.setOnClickListener {
@@ -132,6 +177,44 @@ class AIInputFragment : Fragment() {
         }
     }
 
+    private fun processAttachment(
+        bytes: ByteArray,
+        mimeType: String,
+        displayName: String,
+        isImage: Boolean
+    ) {
+        binding.inputLayout.error = null
+        setLoading(true)
+
+        lifecycleScope.launch {
+            val userId = AuthRepository.getInstance().getCurrentUserId() ?: ""
+            currentSessionId = null
+
+            val result = if (isImage) {
+                aiAssistant.processImageInput(bytes, mimeType, userId, displayName)
+            } else {
+                aiAssistant.processDocumentInput(bytes, mimeType, userId, displayName)
+            }
+
+            setLoading(false)
+
+            result.fold(
+                onSuccess = { output ->
+                    handleSuccess(output)
+                },
+                onFailure = { error ->
+                    addMessage(
+                        ChatMessage(
+                            role = ChatRole.ASSISTANT,
+                            text = error.message ?: getString(R.string.ai_error),
+                            isError = true
+                        )
+                    )
+                }
+            )
+        }
+    }
+
     private fun handleSuccess(output: AIProcessingOutput) {
         if (currentSessionId == null) {
             currentSessionId = output.sessionId
@@ -166,5 +249,33 @@ class AIInputFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("session_id", currentSessionId)
         super.onSaveInstanceState(outState)
+    }
+
+    private fun getDisplayName(uri: android.net.Uri): String? {
+        val cursor = requireContext().contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null
+        ) ?: return null
+        cursor.use {
+            if (it.moveToFirst()) {
+                val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) return it.getString(index)
+            }
+        }
+        return null
+    }
+
+    companion object {
+        private const val MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+        private val ATTACHMENT_MIME_TYPES = arrayOf(
+            "image/*",
+            "application/pdf",
+            "text/plain",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
     }
 }

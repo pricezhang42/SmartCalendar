@@ -1,5 +1,6 @@
 package com.example.smartcalendar.data.ai
 
+import android.util.Base64
 import android.util.Log
 import com.example.smartcalendar.BuildConfig
 import io.ktor.client.HttpClient
@@ -34,6 +35,7 @@ class GeminiProvider : AIService {
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
+        explicitNulls = false
     }
 
     private val httpClient by lazy {
@@ -76,10 +78,52 @@ class GeminiProvider : AIService {
 
     override suspend fun parseImage(
         imageBytes: ByteArray,
-        mimeType: String
+        mimeType: String,
+        currentDate: String,
+        timezone: String,
+        calendarContext: List<CalendarContextEvent>?
     ): ProcessingResult {
-        // Image parsing will be implemented in Phase 6B
-        return ProcessingResult.Error("Image parsing not yet implemented")
+        if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
+            return ProcessingResult.Error("Gemini API key not configured")
+        }
+
+        val prompt = buildImageParsingPrompt(currentDate, timezone, calendarContext)
+
+        return generateContent(prompt, mimeType, imageBytes).fold(
+            onSuccess = { responseText ->
+                Log.d(TAG, "Gemini image response: $responseText")
+                parseGeminiResponse(responseText)
+            },
+            onFailure = { error ->
+                Log.e(TAG, "Error calling Gemini API for image", error)
+                ProcessingResult.Error("Failed to process image: ${error.message}", error as? Exception)
+            }
+        )
+    }
+
+    override suspend fun parseDocument(
+        documentBytes: ByteArray,
+        mimeType: String,
+        currentDate: String,
+        timezone: String,
+        calendarContext: List<CalendarContextEvent>?
+    ): ProcessingResult {
+        if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
+            return ProcessingResult.Error("Gemini API key not configured")
+        }
+
+        val prompt = buildDocumentParsingPrompt(currentDate, timezone, calendarContext)
+
+        return generateContent(prompt, mimeType, documentBytes).fold(
+            onSuccess = { responseText ->
+                Log.d(TAG, "Gemini document response: $responseText")
+                parseGeminiResponse(responseText)
+            },
+            onFailure = { error ->
+                Log.e(TAG, "Error calling Gemini API for document", error)
+                ProcessingResult.Error("Failed to process document: ${error.message}", error as? Exception)
+            }
+        )
     }
 
     override suspend fun refineEvents(
@@ -171,6 +215,129 @@ If no events found, return: {"events": []}
 """.trimIndent()
     }
 
+    private fun buildImageParsingPrompt(
+        currentDate: String,
+        timezone: String,
+        calendarContext: List<CalendarContextEvent>?
+    ): String {
+        val contextJson = calendarContext?.let {
+            json.encodeToString(
+                kotlinx.serialization.builtins.ListSerializer(CalendarContextEvent.serializer()),
+                it
+            )
+        }
+        return """
+You are a calendar assistant. Extract calendar events from the attached image.
+
+Current date: $currentDate
+User timezone: $timezone
+
+Calendar context (use for updates/deletes when relevant):
+${contextJson ?: "[]"}
+
+Instructions:
+1. Read dates, times, titles, locations from the image
+2. Parse relative dates based on the current date
+3. If no specific time is given, leave startTime and endTime as null
+4. For all-day events (like birthdays, holidays), set isAllDay to true
+5. Parse recurrence patterns if mentioned
+6. Estimate confidence (0.0-1.0)
+7. If the user is modifying or deleting existing events, set action to UPDATE or DELETE
+8. For UPDATE/DELETE, set targetEventId to the matching id from calendar context
+9. For recurring events, set scope to THIS_INSTANCE, THIS_AND_FOLLOWING, or ALL
+10. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
+11. If you can infer an RRULE, set recurrenceRule
+12. If there are exceptions, list them in exceptionDates
+
+Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
+{
+  "message": "Short natural-language summary and any follow-up question",
+  "events": [
+    {
+      "title": "Event title",
+      "description": "Optional description or null",
+      "location": "Optional location or null",
+      "date": "YYYY-MM-DD",
+      "startTime": "HH:MM or null",
+      "endTime": "HH:MM or null",
+      "isAllDay": true,
+      "recurrence": "Natural language recurrence or null",
+      "recurrenceRule": "RRULE or null",
+      "exceptionDates": ["YYYY-MM-DD", "YYYY-MM-DD"],
+      "confidence": 0.95,
+      "action": "CREATE|UPDATE|DELETE",
+      "targetEventId": "required when UPDATE or DELETE",
+      "scope": "THIS_INSTANCE|THIS_AND_FOLLOWING|ALL",
+      "instanceDate": "required for recurring updates/deletes on a specific date"
+    }
+  ]
+}
+
+If no events found, return: {"events": []}
+""".trimIndent()
+    }
+
+    private fun buildDocumentParsingPrompt(
+        currentDate: String,
+        timezone: String,
+        calendarContext: List<CalendarContextEvent>?
+    ): String {
+        val contextJson = calendarContext?.let {
+            json.encodeToString(
+                kotlinx.serialization.builtins.ListSerializer(CalendarContextEvent.serializer()),
+                it
+            )
+        }
+        return """
+You are a calendar assistant. Extract calendar events from the attached document.
+
+Current date: $currentDate
+User timezone: $timezone
+
+Calendar context (use for updates/deletes when relevant):
+${contextJson ?: "[]"}
+
+Instructions:
+1. Extract ALL events mentioned in the document
+2. Parse relative dates (tomorrow, next Monday, etc.) relative to the current date
+3. If no specific time is given, leave startTime and endTime as null
+4. For all-day events, set isAllDay to true
+5. Parse recurrence patterns if mentioned
+6. Estimate confidence (0.0-1.0)
+7. If the document modifies or deletes existing events, set action to UPDATE or DELETE
+8. For UPDATE/DELETE, set targetEventId to the matching id from calendar context
+9. For recurring events, set scope to THIS_INSTANCE, THIS_AND_FOLLOWING, or ALL
+10. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
+11. If you can infer an RRULE, set recurrenceRule
+12. If there are exceptions, list them in exceptionDates
+
+Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
+{
+  "message": "Short natural-language summary and any follow-up question",
+  "events": [
+    {
+      "title": "Event title",
+      "description": "Optional description or null",
+      "location": "Optional location or null",
+      "date": "YYYY-MM-DD",
+      "startTime": "HH:MM or null",
+      "endTime": "HH:MM or null",
+      "isAllDay": true,
+      "recurrence": "Natural language recurrence or null",
+      "recurrenceRule": "RRULE or null",
+      "exceptionDates": ["YYYY-MM-DD", "YYYY-MM-DD"],
+      "confidence": 0.95,
+      "action": "CREATE|UPDATE|DELETE",
+      "targetEventId": "required when UPDATE or DELETE",
+      "scope": "THIS_INSTANCE|THIS_AND_FOLLOWING|ALL",
+      "instanceDate": "required for recurring updates/deletes on a specific date"
+    }
+  ]
+}
+
+If no events found, return: {"events": []}
+""".trimIndent()
+    }
     private fun buildRefinementPrompt(events: List<ExtractedEvent>, instruction: String): String {
         val eventsJson = json.encodeToString(
             kotlinx.serialization.builtins.ListSerializer(ExtractedEvent.serializer()),
@@ -249,12 +416,29 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
         }
     }
 
-    private suspend fun generateContent(prompt: String): Result<String> {
+    private suspend fun generateContent(
+        prompt: String,
+        attachmentMimeType: String? = null,
+        attachmentBytes: ByteArray? = null
+    ): Result<String> {
         return try {
+            val parts = mutableListOf<GeminiPart>()
+            parts.add(GeminiPart(text = prompt))
+            if (attachmentMimeType != null && attachmentBytes != null) {
+                val encoded = Base64.encodeToString(attachmentBytes, Base64.NO_WRAP)
+                parts.add(
+                    GeminiPart(
+                        inlineData = GeminiInlineData(
+                            mimeType = attachmentMimeType,
+                            data = encoded
+                        )
+                    )
+                )
+            }
             val request = GeminiGenerateRequest(
                 contents = listOf(
                     GeminiRequestContent(
-                        parts = listOf(GeminiPart(text = prompt))
+                        parts = parts
                     )
                 )
             )
@@ -309,7 +493,14 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
 
     @Serializable
     private data class GeminiPart(
-        val text: String
+        val text: String? = null,
+        val inlineData: GeminiInlineData? = null
+    )
+
+    @Serializable
+    private data class GeminiInlineData(
+        val mimeType: String,
+        val data: String
     )
 
     @Serializable

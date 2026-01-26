@@ -67,81 +67,62 @@ class AICalendarAssistant private constructor(
             null
         }
 
-        when (val result = aiService.parseText(text, currentDate, timezone, calendarContext)) {
-            is ProcessingResult.Success -> {
-                if (result.response.events.isEmpty()) {
-                    return@withContext Result.failure(Exception("No events found in the input"))
-                }
+        val result = aiService.parseText(text, currentDate, timezone, calendarContext)
+        handleProcessingResult(
+            result = result,
+            calendarRepository = calendarRepository,
+            userId = userId,
+            rawInput = text,
+            inputType = InputType.TEXT
+        )
+    }
 
-                val sessionId = UUID.randomUUID().toString()
-                val pendingEvents = result.response.events.mapNotNull { extracted ->
-                    val action = extracted.action
-                    if (action == AIAction.UPDATE || action == AIAction.DELETE) {
-                        val targetId = extracted.targetEventId
-                            ?: return@mapNotNull null
-                        val existing = calendarRepository.getEvent(targetId)
-                            ?: return@mapNotNull null
-                        val scope = determineRecurrenceScope(extracted, existing)
-                        val normalized = normalizeExtractedForScope(extracted, scope)
-                        val merged = mergeWithExisting(normalized, existing)
-                        val operation = if (action == AIAction.DELETE) {
-                            PendingOperation.DELETE
-                        } else {
-                            PendingOperation.UPDATE
-                        }
-                        val instanceStartTime = resolveInstanceStartTime(
-                            normalized,
-                            existing,
-                            scope
-                        )
-                        convertToPendingEvent(
-                            merged,
-                            sessionId,
-                            userId,
-                            text,
-                            InputType.TEXT,
-                            operation,
-                            existing.uid,
-                            existing.calendarId,
-                            scope,
-                            instanceStartTime
-                        )
-                    } else {
-                        convertToPendingEvent(
-                            extracted,
-                            sessionId,
-                            userId,
-                            text,
-                            InputType.TEXT,
-                            PendingOperation.CREATE,
-                            null,
-                            null,
-                            null,
-                            null
-                        )
-                    }
-                }
+    suspend fun processImageInput(
+        imageBytes: ByteArray,
+        mimeType: String,
+        userId: String,
+        fileLabel: String
+    ): Result<AIProcessingOutput> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "Processing image input: $fileLabel")
 
-                if (pendingEvents.isEmpty()) {
-                    return@withContext Result.failure(Exception("No matching events found to update or delete"))
-                }
+        val currentDate = dateFormat.format(Date())
+        val timezone = TimeZone.getDefault().id
+        val calendarRepository = LocalCalendarRepository.getInstance(context)
+        calendarRepository.setUserId(userId)
+        val calendarContext = buildCalendarContext(calendarRepository)
 
-                pendingEventDao.insertAll(pendingEvents)
-                Log.d(TAG, "Created ${pendingEvents.size} pending events with session: $sessionId")
+        val result = aiService.parseImage(imageBytes, mimeType, currentDate, timezone, calendarContext)
+        handleProcessingResult(
+            result = result,
+            calendarRepository = calendarRepository,
+            userId = userId,
+            rawInput = "image:$fileLabel",
+            inputType = InputType.IMAGE
+        )
+    }
 
-                Result.success(
-                    AIProcessingOutput(
-                        sessionId = sessionId,
-                        message = result.response.message,
-                        rawResponse = result.response.rawResponse
-                    )
-                )
-            }
-            is ProcessingResult.Error -> {
-                Log.e(TAG, "AI processing error: ${result.message}")
-                Result.failure(Exception(result.message))
-            }
-        }
+    suspend fun processDocumentInput(
+        documentBytes: ByteArray,
+        mimeType: String,
+        userId: String,
+        fileLabel: String
+    ): Result<AIProcessingOutput> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "Processing document input: $fileLabel")
+
+        val currentDate = dateFormat.format(Date())
+        val timezone = TimeZone.getDefault().id
+        val calendarRepository = LocalCalendarRepository.getInstance(context)
+        calendarRepository.setUserId(userId)
+        val calendarContext = buildCalendarContext(calendarRepository)
+
+        val result = aiService.parseDocument(documentBytes, mimeType, currentDate, timezone, calendarContext)
+        handleProcessingResult(
+            result = result,
+            calendarRepository = calendarRepository,
+            userId = userId,
+            rawInput = "document:$fileLabel",
+            inputType = InputType.DOCUMENT
+        )
     }
 
     /**
@@ -216,6 +197,90 @@ class AICalendarAssistant private constructor(
             }
             is ProcessingResult.Error -> {
                 Log.e(TAG, "AI refine error: ${result.message}")
+                Result.failure(Exception(result.message))
+            }
+        }
+    }
+
+    private suspend fun handleProcessingResult(
+        result: ProcessingResult,
+        calendarRepository: LocalCalendarRepository,
+        userId: String,
+        rawInput: String,
+        inputType: InputType
+    ): Result<AIProcessingOutput> {
+        return when (result) {
+            is ProcessingResult.Success -> {
+                if (result.response.events.isEmpty()) {
+                    return Result.failure(Exception("No events found in the input"))
+                }
+
+                val sessionId = UUID.randomUUID().toString()
+                val pendingEvents = result.response.events.mapNotNull { extracted ->
+                    val action = extracted.action
+                    if (action == AIAction.UPDATE || action == AIAction.DELETE) {
+                        val targetId = extracted.targetEventId
+                            ?: return@mapNotNull null
+                        val existing = calendarRepository.getEvent(targetId)
+                            ?: return@mapNotNull null
+                        val scope = determineRecurrenceScope(extracted, existing)
+                        val normalized = normalizeExtractedForScope(extracted, scope)
+                        val merged = mergeWithExisting(normalized, existing)
+                        val operation = if (action == AIAction.DELETE) {
+                            PendingOperation.DELETE
+                        } else {
+                            PendingOperation.UPDATE
+                        }
+                        val instanceStartTime = resolveInstanceStartTime(
+                            normalized,
+                            existing,
+                            scope
+                        )
+                        convertToPendingEvent(
+                            merged,
+                            sessionId,
+                            userId,
+                            rawInput,
+                            inputType,
+                            operation,
+                            existing.uid,
+                            existing.calendarId,
+                            scope,
+                            instanceStartTime
+                        )
+                    } else {
+                        convertToPendingEvent(
+                            extracted,
+                            sessionId,
+                            userId,
+                            rawInput,
+                            inputType,
+                            PendingOperation.CREATE,
+                            null,
+                            null,
+                            null,
+                            null
+                        )
+                    }
+                }
+
+                if (pendingEvents.isEmpty()) {
+                    return Result.failure(Exception("No matching events found to update or delete"))
+                }
+
+                pendingEventDao.insertAll(pendingEvents)
+                Log.d(TAG, "Created ${pendingEvents.size} pending events with session: $sessionId")
+
+                Result.success(
+                    AIProcessingOutput(
+                        sessionId = sessionId,
+                        message = result.response.message,
+                        rawResponse = result.response.rawResponse
+                    )
+                )
+            }
+            is ProcessingResult.Error -> {
+                Log.e(TAG, "AI processing error: ${result.message}")
                 Result.failure(Exception(result.message))
             }
         }

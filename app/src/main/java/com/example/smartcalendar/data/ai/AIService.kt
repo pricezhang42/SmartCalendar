@@ -27,7 +27,24 @@ interface AIService {
      */
     suspend fun parseImage(
         imageBytes: ByteArray,
-        mimeType: String
+        mimeType: String,
+        currentDate: String,
+        timezone: String,
+        calendarContext: List<CalendarContextEvent>? = null
+    ): ProcessingResult
+
+    /**
+     * Parse document to extract calendar events.
+     * @param documentBytes The document data
+     * @param mimeType Document MIME type (e.g., "application/pdf")
+     * @return ProcessingResult with extracted events or error
+     */
+    suspend fun parseDocument(
+        documentBytes: ByteArray,
+        mimeType: String,
+        currentDate: String,
+        timezone: String,
+        calendarContext: List<CalendarContextEvent>? = null
     ): ProcessingResult
 
     /**
