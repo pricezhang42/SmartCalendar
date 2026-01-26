@@ -46,6 +46,7 @@ class AICalendarAssistant private constructor(
     private val exdateFormatUtc = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
+    private val exdateFormatLocal = SimpleDateFormat("yyyyMMdd", Locale.US)
 
     /**
      * Process text input and create pending events for review.
@@ -691,7 +692,7 @@ class AICalendarAssistant private constructor(
     private fun buildExdate(exceptionDates: List<String>?): String? {
         if (exceptionDates.isNullOrEmpty()) return null
         val parts = exceptionDates.mapNotNull { dateStr ->
-            parseDateToUtcEndOfDay(dateStr.trim(), endOfDay = false)?.let { exdateFormatUtc.format(it) }
+            parseDateToLocalDay(dateStr.trim())?.let { exdateFormatLocal.format(it) }
         }
         return parts.takeIf { it.isNotEmpty() }?.joinToString(",")
     }
@@ -780,6 +781,24 @@ class AICalendarAssistant private constructor(
                 set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0)
             }
+            set(Calendar.MILLISECOND, 0)
+        }
+        return cal.time
+    }
+
+    private fun parseDateToLocalDay(dateStr: String): Date? {
+        val parts = dateStr.split("-")
+        if (parts.size != 3) return null
+        val year = parts[0].toIntOrNull() ?: return null
+        val month = parts[1].toIntOrNull() ?: return null
+        val day = parts[2].toIntOrNull() ?: return null
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month - 1)
+            set(Calendar.DAY_OF_MONTH, day)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
         return cal.time

@@ -186,6 +186,10 @@ Instructions:
 11. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
 12. If you can infer an RRULE, set recurrenceRule (e.g., "FREQ=WEEKLY;BYDAY=MO;UNTIL=20260330T235959Z")
 13. If there are exceptions, list them in exceptionDates (YYYY-MM-DD) and do not put them in description
+14. If a single occurrence changes time/date, create TWO events:
+    - The recurring event with exceptionDates including the original date
+    - A separate single (non-recurring) event at the new date/time
+15. Do NOT create a duplicated recurring instance; use exceptionDates + a single event for single-occurrence changes
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
 {
@@ -248,6 +252,10 @@ Instructions:
 10. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
 11. If you can infer an RRULE, set recurrenceRule
 12. If there are exceptions, list them in exceptionDates
+13. If a single occurrence changes time/date, create TWO events:
+    - The recurring event with exceptionDates including the original date
+    - A separate single (non-recurring) event at the new date/time
+14. Do NOT create a duplicated recurring instance; use exceptionDates + a single event for single-occurrence changes
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
 {
@@ -310,6 +318,10 @@ Instructions:
 10. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
 11. If you can infer an RRULE, set recurrenceRule
 12. If there are exceptions, list them in exceptionDates
+13. If a single occurrence changes time/date, create TWO events:
+    - The recurring event with exceptionDates including the original date
+    - A separate single (non-recurring) event at the new date/time
+14. Do NOT create a duplicated recurring instance; use exceptionDates + a single event for single-occurrence changes
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
 {
@@ -353,6 +365,7 @@ $eventsJson
 User instruction: "$instruction"
 
 Apply the instruction to the relevant event(s) and return the modified events.
+If a single occurrence changes time/date, remove that date from the recurring series via exceptionDates and add a new single event at the new time.
 
 Output ONLY a valid JSON object (no markdown, no code blocks):
 {
@@ -384,16 +397,18 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
                 .replace("```", "")
                 .trim()
 
-            val parsed = if (cleanedResponse.startsWith("[")) {
+            val jsonPayload = extractJsonPayload(cleanedResponse)
+
+            val parsed = if (jsonPayload.startsWith("[")) {
                 GeminiEventResponse(
                     events = json.decodeFromString(
                         kotlinx.serialization.builtins.ListSerializer(ExtractedEvent.serializer()),
-                        cleanedResponse
+                        jsonPayload
                     ),
                     message = null
                 )
             } else {
-                json.decodeFromString<GeminiEventResponse>(cleanedResponse)
+                json.decodeFromString<GeminiEventResponse>(jsonPayload)
             }
 
             val avgConfidence = if (parsed.events.isNotEmpty()) {
@@ -414,6 +429,27 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
             Log.e(TAG, "Failed to parse Gemini response: $responseText", e)
             ProcessingResult.Error("Failed to parse response: ${e.message}", e)
         }
+    }
+
+    private fun extractJsonPayload(text: String): String {
+        val trimmed = text.trim()
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            return trimmed
+        }
+
+        val firstBrace = trimmed.indexOf('{')
+        val firstBracket = trimmed.indexOf('[')
+        val start = listOf(firstBrace, firstBracket)
+            .filter { it >= 0 }
+            .minOrNull() ?: return trimmed
+
+        val endBrace = trimmed.lastIndexOf('}')
+        val endBracket = trimmed.lastIndexOf(']')
+        val end = listOf(endBrace, endBracket)
+            .filter { it >= 0 }
+            .maxOrNull() ?: return trimmed
+
+        return if (end > start) trimmed.substring(start, end + 1) else trimmed
     }
 
     private suspend fun generateContent(

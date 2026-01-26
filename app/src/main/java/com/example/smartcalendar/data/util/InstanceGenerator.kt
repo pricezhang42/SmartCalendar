@@ -127,6 +127,10 @@ object InstanceGenerator {
             parseDateTime(dateStr)?.let { time ->
                 if (isUtc) {
                     utcDays.add(normalizeToDayUtc(time))
+                    if (dateStr.contains("T000000Z")) {
+                        // Date-only exceptions stored as UTC midnight should also exclude local day
+                        localDays.add(normalizeToDay(time))
+                    }
                 } else {
                     localDays.add(normalizeToDay(time))
                 }
