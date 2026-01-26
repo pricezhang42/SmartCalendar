@@ -34,7 +34,24 @@ SmartScheduler is a next-generation calendar application that revolutionizes how
 ---
 ## Demos
 
+### Create Single Event Manually And With Cali 
+Example Input:
+```
+Party at Peter's house tomorrow at 8pm.
+```
+https://github.com/user-attachments/assets/0fcbf239-324a-4f5f-9272-27e4b5578b22
 
+### Create Recurring Event with Text
+Example Input:
+```
+I have a French class every Friday evening at 7pm-8:30pm until the end of March. But there is no class at the last week of Feb and the class at the first week of Feb will be postponed by 1 hour.
+```
+https://github.com/user-attachments/assets/5ad667c1-d2e2-445d-b85f-b0347c3fc9ab
+
+### Create Recurring Event with Image
+Upload a screenshot of my class schedule and refine new events on the review screen.
+
+https://github.com/user-attachments/assets/39ed43b3-e198-4275-8873-3c9caed20b7c
 
 ---
 
