@@ -132,11 +132,13 @@
     <string name="ai_error">Failed to process</string>
     <string name="ai_no_events">No events found</string>
     <string name="ai_attach">Attach</string>
+    <string name="ai_clear_attachments">Clear</string>
     <string name="ai_attachment">attachment</string>
     <string name="ai_attachment_failed">Failed to read attachment</string>
     <string name="ai_attachment_too_large">Attachment is too large (max 10MB)</string>
     <string name="ai_attached_image">Attached image: %1$s</string>
     <string name="ai_attached_document">Attached document: %1$s</string>
+    <string name="ai_attachments_selected">Attachments: %1$d</string>
     <string name="ai_review_ready">I prepared the changes. Want to review them?</string>
     <string name="ai_preview_title">Review Events</string>
     <string name="ai_approve_all">Approve All</string>

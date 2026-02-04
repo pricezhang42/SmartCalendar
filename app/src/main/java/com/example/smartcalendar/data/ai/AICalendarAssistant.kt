@@ -78,6 +78,35 @@ class AICalendarAssistant private constructor(
         )
     }
 
+    suspend fun processTextIntoSession(
+        text: String,
+        userId: String,
+        sessionId: String
+    ): Result<AIProcessingOutput> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "Processing text input for session: $sessionId")
+
+        val currentDate = dateFormat.format(Date())
+        val timezone = TimeZone.getDefault().id
+        val calendarRepository = LocalCalendarRepository.getInstance(context)
+        calendarRepository.setUserId(userId)
+
+        val calendarContext = if (shouldIncludeCalendarContext(text)) {
+            buildCalendarContext(calendarRepository)
+        } else {
+            null
+        }
+
+        val result = aiService.parseText(text, currentDate, timezone, calendarContext)
+        handleProcessingResult(
+            result = result,
+            calendarRepository = calendarRepository,
+            userId = userId,
+            rawInput = text,
+            inputType = InputType.TEXT,
+            sessionIdOverride = sessionId
+        )
+    }
+
     suspend fun processImageInput(
         imageBytes: ByteArray,
         mimeType: String,
@@ -102,6 +131,32 @@ class AICalendarAssistant private constructor(
         )
     }
 
+    suspend fun processImageIntoSession(
+        imageBytes: ByteArray,
+        mimeType: String,
+        userId: String,
+        fileLabel: String,
+        sessionId: String
+    ): Result<AIProcessingOutput> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "Processing image input for session: $sessionId")
+
+        val currentDate = dateFormat.format(Date())
+        val timezone = TimeZone.getDefault().id
+        val calendarRepository = LocalCalendarRepository.getInstance(context)
+        calendarRepository.setUserId(userId)
+        val calendarContext = buildCalendarContext(calendarRepository)
+
+        val result = aiService.parseImage(imageBytes, mimeType, currentDate, timezone, calendarContext)
+        handleProcessingResult(
+            result = result,
+            calendarRepository = calendarRepository,
+            userId = userId,
+            rawInput = "image:$fileLabel",
+            inputType = InputType.IMAGE,
+            sessionIdOverride = sessionId
+        )
+    }
+
     suspend fun processDocumentInput(
         documentBytes: ByteArray,
         mimeType: String,
@@ -123,6 +178,32 @@ class AICalendarAssistant private constructor(
             userId = userId,
             rawInput = "document:$fileLabel",
             inputType = InputType.DOCUMENT
+        )
+    }
+
+    suspend fun processDocumentIntoSession(
+        documentBytes: ByteArray,
+        mimeType: String,
+        userId: String,
+        fileLabel: String,
+        sessionId: String
+    ): Result<AIProcessingOutput> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "Processing document input for session: $sessionId")
+
+        val currentDate = dateFormat.format(Date())
+        val timezone = TimeZone.getDefault().id
+        val calendarRepository = LocalCalendarRepository.getInstance(context)
+        calendarRepository.setUserId(userId)
+        val calendarContext = buildCalendarContext(calendarRepository)
+
+        val result = aiService.parseDocument(documentBytes, mimeType, currentDate, timezone, calendarContext)
+        handleProcessingResult(
+            result = result,
+            calendarRepository = calendarRepository,
+            userId = userId,
+            rawInput = "document:$fileLabel",
+            inputType = InputType.DOCUMENT,
+            sessionIdOverride = sessionId
         )
     }
 
@@ -208,7 +289,8 @@ class AICalendarAssistant private constructor(
         calendarRepository: LocalCalendarRepository,
         userId: String,
         rawInput: String,
-        inputType: InputType
+        inputType: InputType,
+        sessionIdOverride: String? = null
     ): Result<AIProcessingOutput> {
         return when (result) {
             is ProcessingResult.Success -> {
@@ -216,7 +298,7 @@ class AICalendarAssistant private constructor(
                     return Result.failure(Exception("No events found in the input"))
                 }
 
-                val sessionId = UUID.randomUUID().toString()
+                val sessionId = sessionIdOverride ?: UUID.randomUUID().toString()
                 val pendingEvents = result.response.events.mapNotNull { extracted ->
                     val action = extracted.action
                     if (action == AIAction.UPDATE || action == AIAction.DELETE) {

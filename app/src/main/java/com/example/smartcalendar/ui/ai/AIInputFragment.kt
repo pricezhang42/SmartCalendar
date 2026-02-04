@@ -1,10 +1,13 @@
 package com.example.smartcalendar.ui.ai
 
+import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
+import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,44 +33,13 @@ class AIInputFragment : Fragment() {
 
     private var currentSessionId: String? = null
     private val messages = mutableListOf<ChatMessage>()
+    private val attachments = mutableListOf<AttachmentItem>()
 
-    private val attachmentPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@registerForActivityResult
-        val contentResolver = requireContext().contentResolver
-        val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
-        val displayName = getDisplayName(uri) ?: getString(R.string.ai_attachment)
-
-        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        if (bytes == null) {
-            addMessage(
-                ChatMessage(
-                    role = ChatRole.ASSISTANT,
-                    text = getString(R.string.ai_attachment_failed),
-                    isError = true
-                )
-            )
-            return@registerForActivityResult
+    private val attachmentPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNullOrEmpty()) return@registerForActivityResult
+        uris.forEach { uri ->
+            addAttachment(uri)
         }
-
-        if (bytes.size > MAX_ATTACHMENT_BYTES) {
-            addMessage(
-                ChatMessage(
-                    role = ChatRole.ASSISTANT,
-                    text = getString(R.string.ai_attachment_too_large),
-                    isError = true
-                )
-            )
-            return@registerForActivityResult
-        }
-
-        val isImage = mimeType.startsWith("image/")
-        val label = if (isImage) {
-            getString(R.string.ai_attached_image, displayName)
-        } else {
-            getString(R.string.ai_attached_document, displayName)
-        }
-        addMessage(ChatMessage(ChatRole.USER, label))
-        processAttachment(bytes, mimeType, displayName, isImage)
     }
 
     var onSessionCreated: ((String) -> Unit)? = null
@@ -112,6 +84,10 @@ class AIInputFragment : Fragment() {
         binding.attachButton.setOnClickListener {
             attachmentPicker.launch(ATTACHMENT_MIME_TYPES)
         }
+        binding.clearAttachmentsButton.setOnClickListener {
+            attachments.clear()
+            renderAttachments()
+        }
 
         binding.reviewButton.setOnClickListener {
             val sessionId = currentSessionId
@@ -139,23 +115,41 @@ class AIInputFragment : Fragment() {
 
     private fun processInput() {
         val text = binding.textInput.text.toString().trim()
-        if (text.isEmpty()) {
-            binding.inputLayout.error = "Please enter some text"
+        if (text.isEmpty() && attachments.isEmpty()) {
+            binding.inputLayout.error = "Please enter some text or attach files"
             return
         }
 
         binding.inputLayout.error = null
-        binding.textInput.setText("")
+        if (text.isNotEmpty()) {
+            binding.textInput.setText("")
+            addMessage(ChatMessage(ChatRole.USER, text))
+        }
         setLoading(true)
-        addMessage(ChatMessage(ChatRole.USER, text))
 
         lifecycleScope.launch {
             val userId = AuthRepository.getInstance().getCurrentUserId() ?: ""
 
-            val result = if (currentSessionId == null) {
-                aiAssistant.processTextInput(text, userId)
-            } else {
-                aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
+            val result = when {
+                text.isNotEmpty() && attachments.isEmpty() -> {
+                    if (currentSessionId == null) {
+                        aiAssistant.processTextInput(text, userId)
+                    } else {
+                        aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
+                    }
+                }
+                text.isEmpty() && attachments.isNotEmpty() -> {
+                    processAttachments(userId, null)
+                }
+                else -> {
+                    val sessionId = currentSessionId ?: java.util.UUID.randomUUID().toString()
+                    val textResult = aiAssistant.processTextIntoSession(text, userId, sessionId)
+                    if (textResult.isFailure) {
+                        textResult
+                    } else {
+                        processAttachments(userId, sessionId)
+                    }
+                }
             }
 
             setLoading(false)
@@ -177,42 +171,55 @@ class AIInputFragment : Fragment() {
         }
     }
 
-    private fun processAttachment(
-        bytes: ByteArray,
-        mimeType: String,
-        displayName: String,
-        isImage: Boolean
-    ) {
-        binding.inputLayout.error = null
-        setLoading(true)
-
-        lifecycleScope.launch {
-            val userId = AuthRepository.getInstance().getCurrentUserId() ?: ""
-            currentSessionId = null
-
-            val result = if (isImage) {
-                aiAssistant.processImageInput(bytes, mimeType, userId, displayName)
+    private suspend fun processAttachments(
+        userId: String,
+        sessionId: String?
+    ): Result<AIProcessingOutput> {
+        val targetSessionId = sessionId ?: java.util.UUID.randomUUID().toString()
+        var lastMessage: String? = null
+        attachments.forEach { attachment ->
+            val result = if (attachment.isImage) {
+                aiAssistant.processImageIntoSession(
+                    attachment.bytes,
+                    attachment.mimeType,
+                    userId,
+                    attachment.displayName,
+                    targetSessionId
+                )
             } else {
-                aiAssistant.processDocumentInput(bytes, mimeType, userId, displayName)
+                aiAssistant.processDocumentIntoSession(
+                    attachment.bytes,
+                    attachment.mimeType,
+                    userId,
+                    attachment.displayName,
+                    targetSessionId
+                )
             }
 
-            setLoading(false)
-
-            result.fold(
-                onSuccess = { output ->
-                    handleSuccess(output)
-                },
-                onFailure = { error ->
-                    addMessage(
-                        ChatMessage(
-                            role = ChatRole.ASSISTANT,
-                            text = error.message ?: getString(R.string.ai_error),
-                            isError = true
-                        )
+            if (result.isFailure) {
+                addMessage(
+                    ChatMessage(
+                        role = ChatRole.ASSISTANT,
+                        text = result.exceptionOrNull()?.message
+                            ?: getString(R.string.ai_error),
+                        isError = true
                     )
-                }
-            )
+                )
+            } else {
+                lastMessage = result.getOrNull()?.message ?: lastMessage
+            }
         }
+
+        attachments.clear()
+        renderAttachments()
+
+        return Result.success(
+            AIProcessingOutput(
+                sessionId = targetSessionId,
+                message = lastMessage,
+                rawResponse = ""
+            )
+        )
     }
 
     private fun handleSuccess(output: AIProcessingOutput) {
@@ -239,6 +246,8 @@ class AIInputFragment : Fragment() {
         binding.progressBar.visibility = if (loading) View.VISIBLE else View.GONE
         binding.textInput.isEnabled = !loading
         binding.reviewButton.isEnabled = !loading && !currentSessionId.isNullOrBlank()
+        binding.attachButton.isEnabled = !loading
+        binding.clearAttachmentsButton.isEnabled = !loading
     }
 
     override fun onDestroyView() {
@@ -268,6 +277,75 @@ class AIInputFragment : Fragment() {
         return null
     }
 
+    private fun addAttachment(uri: Uri) {
+        val contentResolver = requireContext().contentResolver
+        val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
+        val displayName = getDisplayName(uri) ?: getString(R.string.ai_attachment)
+        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        if (bytes == null) {
+            addMessage(
+                ChatMessage(
+                    role = ChatRole.ASSISTANT,
+                    text = getString(R.string.ai_attachment_failed),
+                    isError = true
+                )
+            )
+            return
+        }
+
+        if (bytes.size > MAX_ATTACHMENT_BYTES) {
+            addMessage(
+                ChatMessage(
+                    role = ChatRole.ASSISTANT,
+                    text = getString(R.string.ai_attachment_too_large),
+                    isError = true
+                )
+            )
+            return
+        }
+
+        val isImage = mimeType.startsWith("image/")
+        attachments.add(
+            AttachmentItem(
+                uri = uri,
+                bytes = bytes,
+                mimeType = mimeType,
+                displayName = displayName,
+                isImage = isImage
+            )
+        )
+        renderAttachments()
+    }
+
+    private fun renderAttachments() {
+        binding.attachmentsContainer.removeAllViews()
+        if (attachments.isEmpty()) {
+            binding.attachmentsContainer.visibility = View.GONE
+            binding.clearAttachmentsButton.visibility = View.GONE
+            return
+        }
+        binding.attachmentsContainer.visibility = View.VISIBLE
+        binding.clearAttachmentsButton.visibility = View.VISIBLE
+
+        val inflater = LayoutInflater.from(requireContext())
+        attachments.forEachIndexed { index, item ->
+            val row = inflater.inflate(R.layout.item_attachment_row, binding.attachmentsContainer, false)
+            val nameView = row.findViewById<TextView>(R.id.attachmentName)
+            val removeButton = row.findViewById<ImageButton>(R.id.removeAttachment)
+            val label = if (item.isImage) {
+                getString(R.string.ai_attached_image, item.displayName)
+            } else {
+                getString(R.string.ai_attached_document, item.displayName)
+            }
+            nameView.text = label
+            removeButton.setOnClickListener {
+                attachments.removeAt(index)
+                renderAttachments()
+            }
+            binding.attachmentsContainer.addView(row)
+        }
+    }
+
     companion object {
         private const val MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
         private val ATTACHMENT_MIME_TYPES = arrayOf(
@@ -278,4 +356,12 @@ class AIInputFragment : Fragment() {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
     }
+
+    private data class AttachmentItem(
+        val uri: Uri,
+        val bytes: ByteArray,
+        val mimeType: String,
+        val displayName: String,
+        val isImage: Boolean
+    )
 }

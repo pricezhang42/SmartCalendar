@@ -101,7 +101,24 @@
                 app:icon="@android:drawable/ic_menu_upload"
                 app:iconPadding="6dp" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/clearAttachmentsButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_marginStart="8dp"
+                android:text="@string/ai_clear_attachments"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:visibility="gone" />
+
         </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/attachmentsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical"
+            android:visibility="gone" />
 
         <LinearLayout
             android:layout_width="match_parent"
