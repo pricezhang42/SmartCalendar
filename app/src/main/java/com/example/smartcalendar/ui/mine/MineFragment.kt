@@ -1,6 +1,7 @@
 package com.example.smartcalendar.ui.mine
 
 import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -16,8 +17,10 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.LocalCalendar
+import com.example.smartcalendar.data.repository.AuthRepository
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentMineBinding
+import com.example.smartcalendar.ui.auth.LoginActivity
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -29,6 +32,7 @@ class MineFragment : Fragment() {
     private var _binding: FragmentMineBinding? = null
     private val binding get() = _binding!!
     private lateinit var repository: LocalCalendarRepository
+    private lateinit var authRepository: AuthRepository
     private lateinit var adapter: CalendarAdapter
 
     override fun onCreateView(
@@ -42,9 +46,11 @@ class MineFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         repository = LocalCalendarRepository.getInstance()
+        authRepository = AuthRepository.getInstance()
 
         setupRecyclerView()
         binding.addCalendarButton.setOnClickListener { showAddCalendarDialog() }
+        binding.logoutButton.setOnClickListener { confirmLogout() }
     }
 
     private fun setupRecyclerView() {
@@ -173,6 +179,34 @@ class MineFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    private fun confirmLogout() {
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.logout)
+            .setMessage("Do you want to log out?")
+            .setPositiveButton(R.string.logout) { _, _ ->
+                lifecycleScope.launch {
+                    authRepository.signOut().fold(
+                        onSuccess = {
+                            val intent = Intent(requireContext(), LoginActivity::class.java).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                            }
+                            startActivity(intent)
+                            activity?.finish()
+                        },
+                        onFailure = { error ->
+                            Toast.makeText(
+                                requireContext(),
+                                error.message ?: "Failed to log out",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     // =============== Adapter ===============

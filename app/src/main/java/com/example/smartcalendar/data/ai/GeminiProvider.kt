@@ -182,14 +182,16 @@ Instructions:
 7. If the user is modifying or deleting existing events, set action to UPDATE or DELETE
 8. For UPDATE/DELETE, set targetEventId to the matching id from calendar context
 9. For UPDATE, change date/time fields instead of adding phrases like "postponed" to description
-10. For recurring events, set scope to THIS_INSTANCE, THIS_AND_FOLLOWING, or ALL
-11. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
-12. If you can infer an RRULE, set recurrenceRule (e.g., "FREQ=WEEKLY;BYDAY=MO;UNTIL=20260330T235959Z")
-13. If there are exceptions, list them in exceptionDates (YYYY-MM-DD) and do not put them in description
-14. If a single occurrence changes time/date, create TWO events:
+10. Parse color changes when mentioned (e.g., red/blue/lavender) and set color as color name or #RRGGBB
+11. If no color is mentioned, leave color as null
+12. For recurring events, set scope to THIS_INSTANCE, THIS_AND_FOLLOWING, or ALL
+13. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
+14. If you can infer an RRULE, set recurrenceRule (e.g., "FREQ=WEEKLY;BYDAY=MO;UNTIL=20260330T235959Z")
+15. If there are exceptions, list them in exceptionDates (YYYY-MM-DD) and do not put them in description
+16. If a single occurrence changes time/date, create TWO events:
     - The recurring event with exceptionDates including the original date
     - A separate single (non-recurring) event at the new date/time
-15. Do NOT create a duplicated recurring instance; use exceptionDates + a single event for single-occurrence changes
+17. Do NOT create a duplicated recurring instance; use exceptionDates + a single event for single-occurrence changes
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
 {
@@ -199,6 +201,7 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
       "title": "Event title",
       "description": "Optional description or null",
       "location": "Optional location or null",
+      "color": "Optional color name or #RRGGBB or null",
       "date": "YYYY-MM-DD",
       "startTime": "HH:MM or null",
       "endTime": "HH:MM or null",
@@ -248,14 +251,16 @@ Instructions:
 6. Estimate confidence (0.0-1.0)
 7. If the user is modifying or deleting existing events, set action to UPDATE or DELETE
 8. For UPDATE/DELETE, set targetEventId to the matching id from calendar context
-9. For recurring events, set scope to THIS_INSTANCE, THIS_AND_FOLLOWING, or ALL
-10. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
-11. If you can infer an RRULE, set recurrenceRule
-12. If there are exceptions, list them in exceptionDates
-13. If a single occurrence changes time/date, create TWO events:
+9. Parse color changes when mentioned and set color as color name or #RRGGBB
+10. If no color is mentioned, leave color as null
+11. For recurring events, set scope to THIS_INSTANCE, THIS_AND_FOLLOWING, or ALL
+12. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
+13. If you can infer an RRULE, set recurrenceRule
+14. If there are exceptions, list them in exceptionDates
+15. If a single occurrence changes time/date, create TWO events:
     - The recurring event with exceptionDates including the original date
     - A separate single (non-recurring) event at the new date/time
-14. Do NOT create a duplicated recurring instance; use exceptionDates + a single event for single-occurrence changes
+16. Do NOT create a duplicated recurring instance; use exceptionDates + a single event for single-occurrence changes
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
 {
@@ -265,6 +270,7 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
       "title": "Event title",
       "description": "Optional description or null",
       "location": "Optional location or null",
+      "color": "Optional color name or #RRGGBB or null",
       "date": "YYYY-MM-DD",
       "startTime": "HH:MM or null",
       "endTime": "HH:MM or null",
@@ -314,14 +320,16 @@ Instructions:
 6. Estimate confidence (0.0-1.0)
 7. If the document modifies or deletes existing events, set action to UPDATE or DELETE
 8. For UPDATE/DELETE, set targetEventId to the matching id from calendar context
-9. For recurring events, set scope to THIS_INSTANCE, THIS_AND_FOLLOWING, or ALL
-10. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
-11. If you can infer an RRULE, set recurrenceRule
-12. If there are exceptions, list them in exceptionDates
-13. If a single occurrence changes time/date, create TWO events:
+9. Parse color changes when mentioned and set color as color name or #RRGGBB
+10. If no color is mentioned, leave color as null
+11. For recurring events, set scope to THIS_INSTANCE, THIS_AND_FOLLOWING, or ALL
+12. For scope THIS_INSTANCE or THIS_AND_FOLLOWING, set instanceDate (YYYY-MM-DD)
+13. If you can infer an RRULE, set recurrenceRule
+14. If there are exceptions, list them in exceptionDates
+15. If a single occurrence changes time/date, create TWO events:
     - The recurring event with exceptionDates including the original date
     - A separate single (non-recurring) event at the new date/time
-14. Do NOT create a duplicated recurring instance; use exceptionDates + a single event for single-occurrence changes
+16. Do NOT create a duplicated recurring instance; use exceptionDates + a single event for single-occurrence changes
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
 {
@@ -331,6 +339,7 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
       "title": "Event title",
       "description": "Optional description or null",
       "location": "Optional location or null",
+      "color": "Optional color name or #RRGGBB or null",
       "date": "YYYY-MM-DD",
       "startTime": "HH:MM or null",
       "endTime": "HH:MM or null",
@@ -366,6 +375,7 @@ User instruction: "$instruction"
 
 Apply the instruction to the relevant event(s) and return the modified events.
 If a single occurrence changes time/date, remove that date from the recurring series via exceptionDates and add a new single event at the new time.
+Apply color changes when the user asks (e.g., "make it red").
 
 Output ONLY a valid JSON object (no markdown, no code blocks):
 {
@@ -375,6 +385,7 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
       "title": "Event title",
       "description": "Optional description or null",
       "location": "Optional location or null",
+      "color": "Optional color name or #RRGGBB or null",
       "date": "YYYY-MM-DD",
       "startTime": "HH:MM or null",
       "endTime": "HH:MM or null",

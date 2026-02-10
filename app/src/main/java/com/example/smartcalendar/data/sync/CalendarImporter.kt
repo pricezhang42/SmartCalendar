@@ -90,6 +90,7 @@ class CalendarImporter(private val context: Context) {
             CalendarContract.Events.EXDATE,
             CalendarContract.Events.EXRULE,
             CalendarContract.Events.DISPLAY_COLOR,
+            CalendarContract.Events.EVENT_COLOR,
             CalendarContract.Events.LAST_DATE
         )
 
@@ -163,7 +164,7 @@ class CalendarImporter(private val context: Context) {
             rdate = cursor.getString(9),
             exdate = cursor.getString(10),
             exrule = cursor.getString(11),
-            color = cursor.getInt(12),
+            color = cursor.getInt(12).takeIf { it != 0 } ?: cursor.getInt(13),
             originalId = id
         )
     }

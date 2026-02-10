@@ -37,4 +37,16 @@
         android:background="?attr/selectableItemBackground"
         app:drawableStartCompat="@android:drawable/ic_input_add" />
 
+    <TextView
+        android:id="@+id/logoutButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp"
+        android:text="@string/logout"
+        android:textSize="16sp"
+        android:textColor="@android:color/holo_red_dark"
+        android:drawablePadding="12dp"
+        android:background="?attr/selectableItemBackground"
+        app:drawableStartCompat="@android:drawable/ic_lock_power_off" />
+
 </LinearLayout>

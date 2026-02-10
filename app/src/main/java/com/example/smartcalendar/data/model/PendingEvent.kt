@@ -80,6 +80,7 @@ data class PendingEvent(
         val now = System.currentTimeMillis()
         val start = startTime ?: now
         val end = endTime ?: (start + 3600000) // Default 1 hour
+        val resolvedColor = suggestedColor ?: color
 
         return ICalEvent(
             uid = UUID.randomUUID().toString(),
@@ -93,7 +94,7 @@ data class PendingEvent(
             allDay = isAllDay,
             rrule = recurrenceRule,
             exdate = exdate,
-            color = color,
+            color = resolvedColor,
             syncStatus = SyncStatus.PENDING
         )
     }

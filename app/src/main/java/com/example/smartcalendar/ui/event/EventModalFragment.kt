@@ -3,7 +3,11 @@ package com.example.smartcalendar.ui.event
 import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -69,6 +73,8 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
     // Calendar selection
     private var selectedCalendarId = "personal"
+    private var selectedEventColor: Int? = null
+    private var isCustomEventColor = false
 
     var onSaveListener: ((ICalEvent) -> Unit)? = null
     var onDeleteListener: ((String) -> Unit)? = null
@@ -83,6 +89,19 @@ class EventModalFragment : BottomSheetDialogFragment() {
         private const val ARG_EVENT_UID = "event_uid"
         private const val ARG_INSTANCE_TIME = "instance_time"
         private const val ARG_INITIAL_TIME = "initial_time"
+        private val ANDROID_EVENT_COLORS = listOf(
+            EventColorOption("Lavender", "#7986CB"),
+            EventColorOption("Sage", "#33B679"),
+            EventColorOption("Grape", "#8E24AA"),
+            EventColorOption("Flamingo", "#E67C73"),
+            EventColorOption("Banana", "#F6BF26"),
+            EventColorOption("Tangerine", "#F4511E"),
+            EventColorOption("Peacock", "#039BE5"),
+            EventColorOption("Graphite", "#616161"),
+            EventColorOption("Blueberry", "#3F51B5"),
+            EventColorOption("Basil", "#0B8043"),
+            EventColorOption("Tomato", "#D50000")
+        )
 
         fun newInstance(event: ICalEvent? = null, instance: EventInstance? = null, initialTime: Long? = null): EventModalFragment {
             return EventModalFragment().apply {
@@ -158,6 +177,8 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
             isAllDay = event.allDay
             repeatEnabled = event.isRecurring
+            selectedEventColor = event.color
+            isCustomEventColor = true
 
             // Parse RRULE for repeat options
             event.rrule?.let { parseRRule(it) }
@@ -267,6 +288,8 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
         // Calendar
         event.suggestedCalendarId?.let { selectedCalendarId = it }
+        selectedEventColor = event.suggestedColor
+        isCustomEventColor = event.suggestedColor != null
 
         // Allow removing pending change
         binding.deleteButton.visibility = View.VISIBLE
@@ -307,6 +330,13 @@ class EventModalFragment : BottomSheetDialogFragment() {
             binding.repeatOptionsContainer.visibility = View.GONE
             binding.reminderRow.isEnabled = false
         }
+    }
+
+    data class EventColorOption(
+        val name: String,
+        val hex: String
+    ) {
+        val value: Int get() = Color.parseColor(hex)
     }
 
     /**
@@ -413,6 +443,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
         
         // Calendar picker
         binding.calendarRow.setOnClickListener { showCalendarPicker() }
+        binding.eventColorRow.setOnClickListener { showEventColorPicker() }
         
         binding.allDaySwitch.setOnCheckedChangeListener { _, isChecked ->
             isAllDay = isChecked
@@ -595,6 +626,9 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 .setTitle(R.string.select_calendar)
                 .setSingleChoiceItems(names, currentIndex) { dialog, which ->
                     selectedCalendarId = calendars[which].id
+                    if (!isCustomEventColor) {
+                        selectedEventColor = calendars[which].color
+                    }
                     updateCalendarDisplay()
                     dialog.dismiss()
                 }
@@ -611,6 +645,48 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
                 setColor(color)
             }
+            if (selectedEventColor == null) {
+                selectedEventColor = color
+            }
+            updateEventColorDisplay()
+        }
+    }
+
+    private fun showEventColorPicker() {
+        val palette = ANDROID_EVENT_COLORS
+        val labels = palette.map {
+            SpannableString("\u25CF  ${it.name}").apply {
+                setSpan(
+                    ForegroundColorSpan(it.value),
+                    0,
+                    1,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+        }.toTypedArray()
+        val selectedIndex = palette.indexOfFirst { it.value == selectedEventColor }.let {
+            if (it >= 0) it else 0
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.select_event_color))
+            .setSingleChoiceItems(labels, selectedIndex) { dialog, which ->
+                selectedEventColor = palette[which].value
+                isCustomEventColor = true
+                updateEventColorDisplay()
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun updateEventColorDisplay() {
+        val color = selectedEventColor ?: Color.parseColor("#4285F4")
+        binding.eventColorValue.text = ANDROID_EVENT_COLORS.firstOrNull { it.value == color }?.name
+            ?: getString(R.string.color_default)
+        binding.eventColorPreview.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(color)
         }
     }
 
@@ -722,6 +798,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
             val duration = if (repeatEnabled) ICalEvent.toDurationString(endTime.timeInMillis - startTime.timeInMillis) else null
             val calendarColor = LocalCalendarRepository.getInstance().getCalendar(selectedCalendarId)?.color
                 ?: android.graphics.Color.parseColor("#4285F4")
+            val eventColor = selectedEventColor ?: calendarColor
             val exdate = buildExdateString()
 
             val event = ICalEvent(
@@ -736,7 +813,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 allDay = isAllDay,
                 rrule = rrule,
                 exdate = exdate,
-                color = calendarColor,
+                color = eventColor,
                 originalId = existingEvent?.originalId
             )
 
@@ -772,6 +849,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
             recurrenceRule = rrule,
             status = PendingStatus.MODIFIED,
             suggestedCalendarId = selectedCalendarId,
+            suggestedColor = selectedEventColor,
             instanceStartTime = if (original.recurrenceScope == PendingRecurrenceScope.THIS_INSTANCE ||
                 original.recurrenceScope == PendingRecurrenceScope.THIS_AND_FOLLOWING
             ) {
@@ -915,4 +993,5 @@ class EventModalFragment : BottomSheetDialogFragment() {
         cal.set(Calendar.MILLISECOND, 0)
         return cal.timeInMillis
     }
+
 }

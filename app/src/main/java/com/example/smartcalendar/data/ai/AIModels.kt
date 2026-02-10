@@ -21,6 +21,7 @@ data class ExtractedEvent(
     val title: String,
     val description: String? = null,
     val location: String? = null,
+    val color: String? = null,          // Hex or named color (e.g., "#7986CB", "Lavender")
     val date: String? = null,           // YYYY-MM-DD format
     val startTime: String? = null,       // HH:MM format (24h)
     val endTime: String? = null,         // HH:MM format (24h)
@@ -53,6 +54,7 @@ enum class AIRecurrenceScope {
 data class CalendarContextEvent(
     val id: String,
     val title: String,
+    val color: String? = null,
     val date: String,
     val startTime: String?,
     val endTime: String?,

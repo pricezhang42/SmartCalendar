@@ -528,6 +528,7 @@ class AICalendarAssistant private constructor(
             isAllDay = extracted.isAllDay ?: false,
             recurrenceRule = rrule,
             exdate = buildExdate(extracted.exceptionDates),
+            suggestedColor = resolveEventColor(extracted.color),
             confidence = extracted.confidence,
             sourceType = inputType,
             rawInput = rawInput,
@@ -632,6 +633,7 @@ class AICalendarAssistant private constructor(
                 CalendarContextEvent(
                     id = event.uid,
                     title = event.summary,
+                    color = toHexColor(event.color),
                     date = dateFormat.format(Date(event.dtStart)),
                     startTime = if (event.allDay) null else timeFormat.format(Date(event.dtStart)),
                     endTime = if (event.allDay) null else timeFormat.format(Date(event.dtEnd)),
@@ -653,6 +655,7 @@ class AICalendarAssistant private constructor(
             title = if (extracted.title.isBlank()) existing.summary else extracted.title,
             description = extracted.description ?: existing.description.ifBlank { null },
             location = extracted.location ?: existing.location.ifBlank { null },
+            color = extracted.color ?: toHexColor(existing.color),
             date = extracted.date ?: existingDate,
             startTime = extracted.startTime ?: if (isAllDay) null else existingStart,
             endTime = extracted.endTime ?: if (isAllDay) null else existingEnd,
@@ -668,6 +671,7 @@ class AICalendarAssistant private constructor(
             title = if (extracted.title.isBlank()) base.title else extracted.title,
             description = extracted.description ?: base.description,
             location = extracted.location ?: base.location,
+            color = extracted.color ?: base.suggestedColor?.let { toHexColor(it) },
             date = extracted.date ?: base.startTime?.let { dateFormat.format(Date(it)) },
             startTime = extracted.startTime ?: base.startTime?.let { timeFormat.format(Date(it)) },
             endTime = extracted.endTime ?: base.endTime?.let { timeFormat.format(Date(it)) },
@@ -816,6 +820,7 @@ class AICalendarAssistant private constructor(
             title = event.title,
             description = event.description,
             location = event.location,
+            color = event.suggestedColor?.let { toHexColor(it) },
             date = date,
             startTime = start,
             endTime = end,
@@ -884,6 +889,43 @@ class AICalendarAssistant private constructor(
             set(Calendar.MILLISECOND, 0)
         }
         return cal.time
+    }
+
+    private fun resolveEventColor(raw: String?): Int? {
+        if (raw.isNullOrBlank()) return null
+        val trimmed = raw.trim()
+        val normalized = trimmed.lowercase()
+        val named = mapOf(
+            "lavender" to "#7986CB",
+            "sage" to "#33B679",
+            "grape" to "#8E24AA",
+            "flamingo" to "#E67C73",
+            "banana" to "#F6BF26",
+            "tangerine" to "#F4511E",
+            "peacock" to "#039BE5",
+            "graphite" to "#616161",
+            "blueberry" to "#3F51B5",
+            "basil" to "#0B8043",
+            "tomato" to "#D50000",
+            "red" to "#D50000",
+            "green" to "#0B8043",
+            "blue" to "#3F51B5",
+            "yellow" to "#F6BF26",
+            "purple" to "#8E24AA",
+            "orange" to "#F4511E",
+            "gray" to "#616161",
+            "grey" to "#616161"
+        )
+        val hex = if (trimmed.startsWith("#")) trimmed else named[normalized] ?: return null
+        return try {
+            android.graphics.Color.parseColor(hex)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun toHexColor(color: Int): String {
+        return String.format("#%06X", 0xFFFFFF and color)
     }
 
     private fun mergePendingIntoExisting(

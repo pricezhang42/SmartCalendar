@@ -40,6 +40,9 @@
     <string name="hint_location">Add location…</string>
     <string name="label_reminder">Reminder</string>
     <string name="label_calendar">Calendar</string>
+    <string name="label_event_color">Event color</string>
+    <string name="select_event_color">Select event color</string>
+    <string name="color_default">Default</string>
     <string name="label_set_repeat">Set Repeat</string>
     <string name="cancel">Cancel</string>
     <string name="save">Save</string>
@@ -110,6 +113,7 @@
     <string name="calendars_subtitle">Select calendars to show on your timeline.</string>
     <string name="add_calendar">Add Calendar</string>
     <string name="add_calendar_button">New Calendar</string>
+    <string name="logout">Log out</string>
     <string name="edit_calendar">Edit Calendar</string>
     <string name="calendar_name">Calendar name</string>
     <string name="calendar_color">Color</string>

@@ -153,6 +153,8 @@ class CalendarExporter(private val context: Context) {
             }
 
             event.exdate?.let { put(CalendarContract.Events.EXDATE, it) }
+            put(CalendarContract.Events.EVENT_COLOR, event.color)
+            putNull(CalendarContract.Events.EVENT_COLOR_KEY)
         }
 
         val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
@@ -179,6 +181,8 @@ class CalendarExporter(private val context: Context) {
             event.rdate?.let { put(CalendarContract.Events.RDATE, it) }
             event.exdate?.let { put(CalendarContract.Events.EXDATE, it) }
             event.exrule?.let { put(CalendarContract.Events.EXRULE, it) }
+            put(CalendarContract.Events.EVENT_COLOR, event.color)
+            putNull(CalendarContract.Events.EVENT_COLOR_KEY)
         }
     }
 }
