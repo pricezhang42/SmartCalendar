@@ -10,6 +10,7 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -26,6 +27,8 @@ import com.example.smartcalendar.data.model.PendingRecurrenceScope
 import com.example.smartcalendar.data.model.PendingStatus
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import com.example.smartcalendar.databinding.FragmentEventModalBinding
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -75,6 +78,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private var selectedCalendarId = "personal"
     private var selectedEventColor: Int? = null
     private var isCustomEventColor = false
+    private var sheetBehavior: BottomSheetBehavior<*>? = null
 
     var onSaveListener: ((ICalEvent) -> Unit)? = null
     var onDeleteListener: ((String) -> Unit)? = null
@@ -138,6 +142,23 @@ class EventModalFragment : BottomSheetDialogFragment() {
         setupListeners()
         initializeCalendar()
         updateUI()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val bottomSheet = (dialog as? BottomSheetDialog)
+            ?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+        val behavior = bottomSheet?.let { BottomSheetBehavior.from(it) }
+        sheetBehavior = behavior
+        behavior?.isDraggable = false
+
+        binding.dragHandleArea.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> behavior?.isDraggable = true
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> behavior?.isDraggable = false
+            }
+            false
+        }
     }
 
     private fun initializeCalendar() {
@@ -472,6 +493,14 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 repeatCount = s.toString().toIntOrNull() ?: 1
             }
         })
+        binding.intervalEditText.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                repeatInterval = s.toString().toIntOrNull()?.coerceAtLeast(1) ?: 1
+                updateIntervalUnitLabel()
+            }
+        })
         binding.addExceptionButton.setOnClickListener { showExceptionDatePicker() }
 
         binding.cancelButton.setOnClickListener { dismiss() }
@@ -545,6 +574,18 @@ class EventModalFragment : BottomSheetDialogFragment() {
         binding.chipYearly.isChecked = repeatFrequency == "YEARLY"
         // Show/hide days of week container
         binding.repeatOnContainer.visibility = if (repeatFrequency == "WEEKLY") View.VISIBLE else View.GONE
+        updateIntervalUnitLabel()
+    }
+
+    private fun updateIntervalUnitLabel() {
+        val unit = when (repeatFrequency) {
+            "DAILY" -> getString(R.string.unit_day)
+            "MONTHLY" -> getString(R.string.unit_month)
+            "YEARLY" -> getString(R.string.unit_year)
+            else -> getString(R.string.unit_week)
+        }
+        val suffix = if (repeatInterval > 1) "s" else ""
+        binding.intervalUnitLabel.text = unit + suffix
     }
 
     private fun parseExdates(exdate: String?) {
@@ -697,6 +738,11 @@ class EventModalFragment : BottomSheetDialogFragment() {
         binding.dateValue.text = dateFormat.format(selectedDate.time)
         binding.startTimeValue.text = timeFormat.format(startTime.time)
         binding.endTimeValue.text = timeFormat.format(endTime.time)
+        val currentIntervalText = binding.intervalEditText.text?.toString()
+        val desiredInterval = repeatInterval.toString()
+        if (currentIntervalText != desiredInterval) {
+            binding.intervalEditText.setText(desiredInterval)
+        }
         
         updateTimeVisibility()
         updateFrequencyUI()

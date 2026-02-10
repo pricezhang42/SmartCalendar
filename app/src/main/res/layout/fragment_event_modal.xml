@@ -11,6 +11,21 @@
         android:orientation="vertical"
         android:padding="16dp">
 
+        <!-- Drag handle: only this area should move the sheet -->
+        <FrameLayout
+            android:id="@+id/dragHandleArea"
+            android:layout_width="match_parent"
+            android:layout_height="20dp"
+            android:layout_marginBottom="4dp">
+
+            <View
+                android:id="@+id/dragHandle"
+                android:layout_width="40dp"
+                android:layout_height="4dp"
+                android:layout_gravity="center"
+                android:background="@drawable/drag_handle_background" />
+        </FrameLayout>
+
         <!-- Header -->
         <TextView
             android:id="@+id/modalTitle"
@@ -550,6 +565,13 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/add_exception"
+                android:layout_gravity="end"
+                android:textSize="12sp"
+                android:minHeight="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="4dp"
                 style="@style/Widget.MaterialComponents.Button.TextButton" />
 
         </LinearLayout>
