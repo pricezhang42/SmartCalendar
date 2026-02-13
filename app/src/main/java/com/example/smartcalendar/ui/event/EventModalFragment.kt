@@ -27,6 +27,7 @@ import com.example.smartcalendar.data.model.PendingOperation
 import com.example.smartcalendar.data.model.PendingRecurrenceScope
 import com.example.smartcalendar.data.model.PendingStatus
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
+import com.example.smartcalendar.data.notification.ReminderManager
 import com.example.smartcalendar.databinding.FragmentEventModalBinding
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -215,6 +216,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
             repeatEnabled = event.isRecurring
             selectedEventColor = event.color
             isCustomEventColor = true
+            reminderMinutes = event.reminderMinutes
 
             // Parse RRULE for repeat options
             event.rrule?.let { parseRRule(it) }
@@ -1000,8 +1002,15 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 rrule = rrule,
                 exdate = exdate,
                 color = eventColor,
+                reminderMinutes = reminderMinutes,
                 originalId = existingEvent?.originalId
             )
+
+            // Schedule reminder if set
+            if (reminderMinutes != null) {
+                val reminderManager = ReminderManager.getInstance(requireContext())
+                reminderManager.scheduleReminder(event, reminderMinutes)
+            }
 
             // For recurring events being edited, show options
             if (existingEvent?.isRecurring == true && instanceStartTime != null) {

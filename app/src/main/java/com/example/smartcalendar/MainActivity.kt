@@ -23,6 +23,7 @@ import com.example.smartcalendar.data.sync.CalendarExporter
 import com.example.smartcalendar.data.sync.CalendarImporter
 import com.example.smartcalendar.data.sync.SyncManager
 import com.example.smartcalendar.data.sync.RealtimeSync
+import com.example.smartcalendar.data.notification.ReminderManager
 import com.example.smartcalendar.databinding.ActivityMainBinding
 import com.example.smartcalendar.ui.ai.AIAssistantActivity
 import com.example.smartcalendar.ui.auth.LoginActivity
@@ -383,6 +384,11 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
                     } else {
                         localRepository.addEvent(savedEvent)
                     }
+
+                    // Schedule reminder if set
+                    val reminderManager = ReminderManager.getInstance(this@MainActivity)
+                    reminderManager.scheduleReminder(savedEvent, savedEvent.reminderMinutes)
+
                     refreshCalendar()
                 }
             }
@@ -390,6 +396,11 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
             modal.onDeleteListener = { eventUid ->
                 lifecycleScope.launch {
                     localRepository.deleteEvent(eventUid)
+
+                    // Cancel reminder
+                    val reminderManager = ReminderManager.getInstance(this@MainActivity)
+                    reminderManager.cancelReminder(eventUid)
+
                     refreshCalendar()
                 }
             }
