@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
+    android:layout_height="match_parent"
     android:background="@android:color/white">
 
     <LinearLayout
@@ -10,21 +10,6 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:padding="16dp">
-
-        <!-- Drag handle: only this area should move the sheet -->
-        <FrameLayout
-            android:id="@+id/dragHandleArea"
-            android:layout_width="match_parent"
-            android:layout_height="20dp"
-            android:layout_marginBottom="4dp">
-
-            <View
-                android:id="@+id/dragHandle"
-                android:layout_width="40dp"
-                android:layout_height="4dp"
-                android:layout_gravity="center"
-                android:background="@drawable/drag_handle_background" />
-        </FrameLayout>
 
         <!-- Header -->
         <TextView

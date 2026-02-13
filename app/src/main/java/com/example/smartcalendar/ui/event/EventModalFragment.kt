@@ -13,6 +13,7 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.graphics.Rect
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
@@ -150,14 +151,19 @@ class EventModalFragment : BottomSheetDialogFragment() {
             ?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
         val behavior = bottomSheet?.let { BottomSheetBehavior.from(it) }
         sheetBehavior = behavior
-        behavior?.isDraggable = false
 
-        binding.dragHandleArea.setOnTouchListener { _, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> behavior?.isDraggable = true
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> behavior?.isDraggable = false
-            }
-            false
+        // Configure bottom sheet behavior for full screen
+        behavior?.apply {
+            skipCollapsed = true
+            isHideable = false
+            isDraggable = false
+            state = BottomSheetBehavior.STATE_EXPANDED
+            peekHeight = ViewGroup.LayoutParams.MATCH_PARENT
+        }
+
+        // Set bottom sheet to full screen height
+        bottomSheet?.layoutParams = bottomSheet?.layoutParams?.apply {
+            height = ViewGroup.LayoutParams.MATCH_PARENT
         }
     }
 
