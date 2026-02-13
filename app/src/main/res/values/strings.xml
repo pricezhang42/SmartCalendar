@@ -50,12 +50,15 @@
     
     <!-- Reminder Options -->
     <string name="reminder_none">None</string>
+    <string name="reminder_at_event">When event start</string>
     <string name="reminder_5min">5 minutes before</string>
     <string name="reminder_10min">10 minutes before</string>
     <string name="reminder_15min">15 minutes before</string>
     <string name="reminder_30min">30 minutes before</string>
     <string name="reminder_1hour">1 hour before</string>
     <string name="reminder_1day">1 day before</string>
+    <string name="reminder_custom">Custom</string>
+    <string name="reminder_custom_format">%d %s before</string>
     
     <!-- Repeat Options -->
     <string name="freq_daily">Daily</string>

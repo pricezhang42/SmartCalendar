@@ -61,7 +61,16 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private var repeatFrequency = "WEEKLY"
     private var repeatInterval = 1
     private var reminderMinutes: Int? = null
+    private var customReminderValue: Int = 1
+    private var customReminderUnit: ReminderUnit = ReminderUnit.MINUTES
     private val exceptionDatesUtc = mutableSetOf<Long>()
+
+    enum class ReminderUnit(val displayName: String, val minutesMultiplier: Int) {
+        MINUTES("minutes", 1),
+        HOURS("hours", 60),
+        DAYS("days", 1440),
+        WEEKS("weeks", 10080)
+    }
 
     private val exdateFormatUtc = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
@@ -763,14 +772,35 @@ class EventModalFragment : BottomSheetDialogFragment() {
 
     private fun updateReminderText() {
         binding.reminderValue.text = when (reminderMinutes) {
-            null, 0 -> getString(R.string.reminder_none)
+            null -> getString(R.string.reminder_none)
+            0 -> getString(R.string.reminder_at_event)
             5 -> getString(R.string.reminder_5min)
             10 -> getString(R.string.reminder_10min)
             15 -> getString(R.string.reminder_15min)
             30 -> getString(R.string.reminder_30min)
             60 -> getString(R.string.reminder_1hour)
             1440 -> getString(R.string.reminder_1day)
-            else -> "$reminderMinutes min"
+            else -> {
+                // Custom reminder - format it nicely
+                val minutes = reminderMinutes ?: 0
+                when {
+                    minutes % 10080 == 0 -> {
+                        val weeks = minutes / 10080
+                        getString(R.string.reminder_custom_format, weeks, if (weeks == 1) "week" else "weeks")
+                    }
+                    minutes % 1440 == 0 -> {
+                        val days = minutes / 1440
+                        getString(R.string.reminder_custom_format, days, if (days == 1) "day" else "days")
+                    }
+                    minutes % 60 == 0 -> {
+                        val hours = minutes / 60
+                        getString(R.string.reminder_custom_format, hours, if (hours == 1) "hour" else "hours")
+                    }
+                    else -> {
+                        getString(R.string.reminder_custom_format, minutes, if (minutes == 1) "minute" else "minutes")
+                    }
+                }
+            }
         }
     }
 
@@ -820,16 +850,120 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private fun showReminderPicker() {
         val popup = PopupMenu(requireContext(), binding.reminderRow)
         popup.menu.add(0, 0, 0, getString(R.string.reminder_none))
-        popup.menu.add(0, 5, 1, getString(R.string.reminder_5min))
-        popup.menu.add(0, 15, 2, getString(R.string.reminder_15min))
-        popup.menu.add(0, 30, 3, getString(R.string.reminder_30min))
-        popup.menu.add(0, 60, 4, getString(R.string.reminder_1hour))
+        popup.menu.add(0, -2, 1, getString(R.string.reminder_at_event))
+        popup.menu.add(0, 5, 2, getString(R.string.reminder_5min))
+        popup.menu.add(0, 10, 3, getString(R.string.reminder_10min))
+        popup.menu.add(0, 15, 4, getString(R.string.reminder_15min))
+        popup.menu.add(0, 30, 5, getString(R.string.reminder_30min))
+        popup.menu.add(0, 60, 6, getString(R.string.reminder_1hour))
+        popup.menu.add(0, -1, 7, getString(R.string.reminder_custom))
         popup.setOnMenuItemClickListener { item ->
-            reminderMinutes = if (item.itemId == 0) null else item.itemId
-            updateReminderText()
+            when (item.itemId) {
+                -1 -> {
+                    // Show custom reminder dialog
+                    showCustomReminderDialog()
+                }
+                -2 -> {
+                    // When event start (0 minutes)
+                    reminderMinutes = 0
+                    updateReminderText()
+                }
+                0 -> {
+                    // None
+                    reminderMinutes = null
+                    updateReminderText()
+                }
+                else -> {
+                    // Specific minute values
+                    reminderMinutes = item.itemId
+                    updateReminderText()
+                }
+            }
             true
         }
         popup.show()
+    }
+
+    private fun showCustomReminderDialog() {
+        val dialogView = LayoutInflater.from(requireContext())
+            .inflate(R.layout.dialog_custom_reminder, null)
+
+        val numberInput = dialogView.findViewById<android.widget.EditText>(R.id.reminderNumberInput)
+        val unitText = dialogView.findViewById<TextView>(R.id.reminderUnitText)
+        val unitGroup = dialogView.findViewById<android.widget.RadioGroup>(R.id.reminderUnitGroup)
+        val radioMinutes = dialogView.findViewById<android.widget.RadioButton>(R.id.radioMinutes)
+        val radioHours = dialogView.findViewById<android.widget.RadioButton>(R.id.radioHours)
+        val radioDays = dialogView.findViewById<android.widget.RadioButton>(R.id.radioDays)
+        val radioWeeks = dialogView.findViewById<android.widget.RadioButton>(R.id.radioWeeks)
+        val eventStartTimeDisplay = dialogView.findViewById<TextView>(R.id.eventStartTimeDisplay)
+        val cancelButton = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.cancelButton)
+        val saveButton = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.saveButton)
+
+        // Set initial values
+        numberInput.setText(customReminderValue.toString())
+        unitText.text = customReminderUnit.displayName
+
+        // Set the correct radio button
+        when (customReminderUnit) {
+            ReminderUnit.MINUTES -> radioMinutes.isChecked = true
+            ReminderUnit.HOURS -> radioHours.isChecked = true
+            ReminderUnit.DAYS -> radioDays.isChecked = true
+            ReminderUnit.WEEKS -> radioWeeks.isChecked = true
+        }
+
+        // Display event start time
+        val dateFormat = SimpleDateFormat("EEE, MMM d, hh:mm a", Locale.getDefault())
+        eventStartTimeDisplay.text = dateFormat.format(startTime.time)
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setView(dialogView)
+            .create()
+
+        // Toggle unit selector visibility when clicking on unit text
+        unitText.setOnClickListener {
+            unitGroup.visibility = if (unitGroup.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+
+        // Handle radio button selection
+        unitGroup.setOnCheckedChangeListener { _, checkedId ->
+            when (checkedId) {
+                R.id.radioMinutes -> {
+                    customReminderUnit = ReminderUnit.MINUTES
+                    unitText.text = "minutes"
+                }
+                R.id.radioHours -> {
+                    customReminderUnit = ReminderUnit.HOURS
+                    unitText.text = "hours"
+                }
+                R.id.radioDays -> {
+                    customReminderUnit = ReminderUnit.DAYS
+                    unitText.text = "days"
+                }
+                R.id.radioWeeks -> {
+                    customReminderUnit = ReminderUnit.WEEKS
+                    unitText.text = "weeks"
+                }
+            }
+            unitGroup.visibility = View.GONE
+        }
+
+        cancelButton.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        saveButton.setOnClickListener {
+            val value = numberInput.text.toString().toIntOrNull()
+            if (value != null && value > 0) {
+                customReminderValue = value
+                reminderMinutes = value * customReminderUnit.minutesMultiplier
+                updateReminderText()
+                dialog.dismiss()
+            } else {
+                numberInput.error = "Please enter a valid number"
+            }
+        }
+
+        dialog.show()
     }
 
     private fun saveEvent() {
