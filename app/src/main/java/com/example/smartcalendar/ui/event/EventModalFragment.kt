@@ -62,6 +62,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
     private var repeatFrequency = "WEEKLY"
     private var repeatInterval = 1
     private var reminderMinutes: Int? = null
+    private var reminderType: String = "NOTIFICATION"
     private var customReminderValue: Int = 1
     private var customReminderUnit: ReminderUnit = ReminderUnit.MINUTES
     private val exceptionDatesUtc = mutableSetOf<Long>()
@@ -217,6 +218,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
             selectedEventColor = event.color
             isCustomEventColor = true
             reminderMinutes = event.reminderMinutes
+            reminderType = event.reminderType
 
             // Parse RRULE for repeat options
             event.rrule?.let { parseRRule(it) }
@@ -494,7 +496,8 @@ class EventModalFragment : BottomSheetDialogFragment() {
         }
 
         binding.reminderRow.setOnClickListener { showReminderPicker() }
-        
+        binding.reminderTypeRow.setOnClickListener { showReminderTypePicker() }
+
         // Repeat frequency chips
         binding.chipDaily.setOnClickListener { setRepeatFrequency("DAILY") }
         binding.chipWeekly.setOnClickListener { setRepeatFrequency("WEEKLY") }
@@ -869,21 +872,55 @@ class EventModalFragment : BottomSheetDialogFragment() {
                     // When event start (0 minutes)
                     reminderMinutes = 0
                     updateReminderText()
+                    updateReminderTypeVisibility()
                 }
                 0 -> {
                     // None
                     reminderMinutes = null
                     updateReminderText()
+                    updateReminderTypeVisibility()
                 }
                 else -> {
                     // Specific minute values
                     reminderMinutes = item.itemId
                     updateReminderText()
+                    updateReminderTypeVisibility()
                 }
             }
             true
         }
         popup.show()
+    }
+
+    private fun showReminderTypePicker() {
+        val popup = PopupMenu(requireContext(), binding.reminderTypeRow)
+        popup.menu.add(0, 0, 0, getString(R.string.reminder_type_notification))
+        popup.menu.add(0, 1, 1, getString(R.string.reminder_type_alarm))
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                0 -> {
+                    reminderType = "NOTIFICATION"
+                    updateReminderTypeText()
+                }
+                1 -> {
+                    reminderType = "ALARM"
+                    updateReminderTypeText()
+                }
+            }
+            true
+        }
+        popup.show()
+    }
+
+    private fun updateReminderTypeText() {
+        binding.reminderTypeValue.text = when (reminderType) {
+            "ALARM" -> getString(R.string.reminder_type_alarm)
+            else -> getString(R.string.reminder_type_notification)
+        }
+    }
+
+    private fun updateReminderTypeVisibility() {
+        binding.reminderTypeRow.visibility = if (reminderMinutes != null) View.VISIBLE else View.GONE
     }
 
     private fun showCustomReminderDialog() {
@@ -959,6 +996,7 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 customReminderValue = value
                 reminderMinutes = value * customReminderUnit.minutesMultiplier
                 updateReminderText()
+                updateReminderTypeVisibility()
                 dialog.dismiss()
             } else {
                 numberInput.error = "Please enter a valid number"
@@ -1003,14 +1041,9 @@ class EventModalFragment : BottomSheetDialogFragment() {
                 exdate = exdate,
                 color = eventColor,
                 reminderMinutes = reminderMinutes,
+                reminderType = reminderType,
                 originalId = existingEvent?.originalId
             )
-
-            // Schedule reminder if set
-            if (reminderMinutes != null) {
-                val reminderManager = ReminderManager.getInstance(requireContext())
-                reminderManager.scheduleReminder(event, reminderMinutes)
-            }
 
             // For recurring events being edited, show options
             if (existingEvent?.isRecurring == true && instanceStartTime != null) {

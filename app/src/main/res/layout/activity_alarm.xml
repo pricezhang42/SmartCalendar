@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#FF1A1A1A"
+    android:padding="32dp">
+
+    <!-- Alarm Icon -->
+    <ImageView
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:src="@android:drawable/ic_lock_idle_alarm"
+        android:tint="#FFFFFF"
+        android:layout_marginBottom="32dp"
+        android:contentDescription="@string/alarm_icon" />
+
+    <!-- Event Title -->
+    <TextView
+        android:id="@+id/eventTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Event Reminder"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF"
+        android:gravity="center"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Event Time -->
+    <TextView
+        android:id="@+id/eventTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Starting in 5 minutes"
+        android:textSize="18sp"
+        android:textColor="#CCCCCC"
+        android:gravity="center"
+        android:layout_marginBottom="48dp" />
+
+    <!-- Snooze Button -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/snoozeButton"
+        android:layout_width="200dp"
+        android:layout_height="wrap_content"
+        android:text="Snooze (5 min)"
+        android:textSize="16sp"
+        android:layout_marginBottom="16dp"
+        android:backgroundTint="#FF4CAF50"
+        android:textColor="#FFFFFF"
+        style="@style/Widget.MaterialComponents.Button" />
+
+    <!-- Dismiss Button -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/dismissButton"
+        android:layout_width="200dp"
+        android:layout_height="wrap_content"
+        android:text="Dismiss"
+        android:textSize="16sp"
+        android:backgroundTint="#FFF44336"
+        android:textColor="#FFFFFF"
+        style="@style/Widget.MaterialComponents.Button" />
+
+</LinearLayout>

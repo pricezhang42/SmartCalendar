@@ -42,6 +42,7 @@ data class ICalEvent(
     val exrule: String? = null,
     val color: Int = -0x1A8CFF, // Default blue
     val reminderMinutes: Int? = null, // Minutes before event to remind (null = no reminder, 0 = at event start)
+    val reminderType: String = "NOTIFICATION", // "NOTIFICATION" or "ALARM"
     val deleted: Boolean = false,
     val lastModified: Long = System.currentTimeMillis(),
     val originalId: Long? = null, // For tracking imported events

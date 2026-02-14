@@ -310,7 +310,7 @@
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:padding="12dp"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="8dp"
             android:background="@drawable/dropdown_background">
 
             <TextView
@@ -327,6 +327,43 @@
                 android:layout_height="24dp"
                 android:src="@android:drawable/arrow_down_float"
                 android:contentDescription="@string/dropdown_arrow" />
+
+        </LinearLayout>
+
+        <!-- Reminder Type (only visible when reminder is set) -->
+        <LinearLayout
+            android:id="@+id/reminderTypeRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/dropdown_background"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/label_reminder_type"
+                android:textSize="14sp"
+                android:textColor="@android:color/darker_gray" />
+
+            <TextView
+                android:id="@+id/reminderTypeValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/reminder_type_notification"
+                android:textSize="16sp"
+                android:textColor="@color/primary_blue" />
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@android:drawable/arrow_down_float"
+                android:contentDescription="@string/dropdown_arrow"
+                android:layout_marginStart="8dp" />
 
         </LinearLayout>
 

@@ -39,6 +39,10 @@
     <string name="label_location">Location</string>
     <string name="hint_location">Add location…</string>
     <string name="label_reminder">Reminder</string>
+    <string name="label_reminder_type">Reminder Type</string>
+    <string name="reminder_type_notification">Notification</string>
+    <string name="reminder_type_alarm">Alarm</string>
+    <string name="alarm_icon">Alarm icon</string>
     <string name="label_calendar">Calendar</string>
     <string name="label_event_color">Event color</string>
     <string name="select_event_color">Select event color</string>

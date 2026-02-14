@@ -24,14 +24,21 @@ class ReminderManager(private val context: Context) {
         // Cancel any existing reminder first
         cancelReminder(event.uid)
 
+        android.util.Log.d("ReminderManager", "scheduleReminder called for event: ${event.summary}, reminderMinutes: $reminderMinutes")
+
         if (reminderMinutes == null) {
+            android.util.Log.d("ReminderManager", "No reminder set (reminderMinutes is null)")
             return // No reminder to set
         }
 
         val triggerTime = event.dtStart - (reminderMinutes * 60 * 1000L)
+        val currentTime = System.currentTimeMillis()
+
+        android.util.Log.d("ReminderManager", "Event start: ${event.dtStart}, Trigger time: $triggerTime, Current time: $currentTime")
 
         // Don't set reminder if it's in the past
-        if (triggerTime < System.currentTimeMillis()) {
+        if (triggerTime < currentTime) {
+            android.util.Log.d("ReminderManager", "Trigger time is in the past, not scheduling alarm")
             return
         }
 
@@ -40,6 +47,7 @@ class ReminderManager(private val context: Context) {
             putExtra(EXTRA_EVENT_TITLE, event.summary)
             putExtra(EXTRA_EVENT_START, event.dtStart)
             putExtra(EXTRA_REMINDER_MINUTES, reminderMinutes)
+            putExtra(EXTRA_REMINDER_TYPE, event.reminderType)
         }
 
         val pendingIntent = PendingIntent.getBroadcast(
@@ -49,38 +57,69 @@ class ReminderManager(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Use exact alarm for better accuracy
+        // Use setAlarmClock for ALARM type to bypass Doze mode completely
+        // Use setExactAndAllowWhileIdle for NOTIFICATION type
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Android 12+ requires exact alarm permission
-                if (alarmManager.canScheduleExactAlarms()) {
+            if (event.reminderType == "ALARM") {
+                // For alarm type, use setAlarmClock which bypasses all battery optimizations
+                // This ensures the alarm will always trigger, even in Doze mode
+                val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerTime, pendingIntent)
+                alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
+                android.util.Log.d("ReminderManager", "========================================")
+                android.util.Log.d("ReminderManager", "ALARM TYPE - AlarmClock scheduled")
+                android.util.Log.d("ReminderManager", "Event: ${event.summary}")
+                android.util.Log.d("ReminderManager", "Event UID: ${event.uid}")
+                android.util.Log.d("ReminderManager", "Trigger time: ${java.util.Date(triggerTime)}")
+                android.util.Log.d("ReminderManager", "Current time: ${java.util.Date(currentTime)}")
+                android.util.Log.d("ReminderManager", "Time until trigger: ${(triggerTime - currentTime) / 1000 / 60} minutes")
+                android.util.Log.d("ReminderManager", "PendingIntent hashCode: ${event.uid.hashCode()}")
+                android.util.Log.d("ReminderManager", "========================================")
+            } else {
+                // For notification type, use exact alarm with idle exception
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (alarmManager.canScheduleExactAlarms()) {
+                        alarmManager.setExactAndAllowWhileIdle(
+                            AlarmManager.RTC_WAKEUP,
+                            triggerTime,
+                            pendingIntent
+                        )
+                        android.util.Log.d("ReminderManager", "NOTIFICATION TYPE - Exact alarm scheduled for ${java.util.Date(triggerTime)}")
+                    } else {
+                        alarmManager.setAndAllowWhileIdle(
+                            AlarmManager.RTC_WAKEUP,
+                            triggerTime,
+                            pendingIntent
+                        )
+                        android.util.Log.w("ReminderManager", "NOTIFICATION TYPE - Inexact alarm scheduled (no exact alarm permission)")
+                    }
+                } else {
                     alarmManager.setExactAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         triggerTime,
                         pendingIntent
                     )
-                } else {
-                    // Fallback to inexact alarm
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerTime,
-                        pendingIntent
-                    )
+                    android.util.Log.d("ReminderManager", "NOTIFICATION TYPE - Exact alarm scheduled for ${java.util.Date(triggerTime)}")
                 }
+            }
+
+            // Verify next alarm time
+            val nextAlarm = alarmManager.nextAlarmClock
+            if (nextAlarm != null) {
+                android.util.Log.d("ReminderManager", "Next system alarm at: ${java.util.Date(nextAlarm.triggerTime)}")
             } else {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    pendingIntent
-                )
+                android.util.Log.w("ReminderManager", "No next alarm found in system")
             }
         } catch (e: SecurityException) {
+            android.util.Log.e("ReminderManager", "SecurityException scheduling alarm", e)
             // Fallback to inexact alarm if exact alarm permission is denied
             alarmManager.setAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP,
                 triggerTime,
                 pendingIntent
             )
+            android.util.Log.d("ReminderManager", "Fallback inexact alarm scheduled")
+        } catch (e: Exception) {
+            android.util.Log.e("ReminderManager", "Error scheduling alarm", e)
         }
     }
 
@@ -88,6 +127,7 @@ class ReminderManager(private val context: Context) {
      * Cancel a reminder for an event.
      */
     fun cancelReminder(eventUid: String) {
+        android.util.Log.d("ReminderManager", "Cancelling reminder for event: $eventUid")
         val intent = Intent(context, ReminderReceiver::class.java)
         val pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -97,6 +137,7 @@ class ReminderManager(private val context: Context) {
         )
         alarmManager.cancel(pendingIntent)
         pendingIntent.cancel()
+        android.util.Log.d("ReminderManager", "Reminder cancelled successfully")
     }
 
     /**
@@ -114,6 +155,7 @@ class ReminderManager(private val context: Context) {
         const val EXTRA_EVENT_TITLE = "event_title"
         const val EXTRA_EVENT_START = "event_start"
         const val EXTRA_REMINDER_MINUTES = "reminder_minutes"
+        const val EXTRA_REMINDER_TYPE = "reminder_type"
 
         @Volatile
         private var instance: ReminderManager? = null

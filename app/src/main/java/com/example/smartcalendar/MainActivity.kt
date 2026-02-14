@@ -386,8 +386,11 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
                     }
 
                     // Schedule reminder if set
+                    android.util.Log.d("MainActivity", "About to schedule reminder for event: ${savedEvent.summary}")
+                    android.util.Log.d("MainActivity", "Reminder minutes: ${savedEvent.reminderMinutes}, Reminder type: ${savedEvent.reminderType}")
                     val reminderManager = ReminderManager.getInstance(this@MainActivity)
                     reminderManager.scheduleReminder(savedEvent, savedEvent.reminderMinutes)
+                    android.util.Log.d("MainActivity", "scheduleReminder call completed")
 
                     refreshCalendar()
                 }
