@@ -2,10 +2,10 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:id="@+id/CalendarFragment"
-        android:icon="@android:drawable/ic_menu_my_calendar"
+        android:icon="@drawable/ic_calendar_month_24px"
         android:title="@string/nav_calendar" />
     <item
         android:id="@+id/MineFragment"
-        android:icon="@android:drawable/ic_menu_myplaces"
+        android:icon="@drawable/ic_person_24px"
         android:title="@string/nav_mine" />
 </menu>

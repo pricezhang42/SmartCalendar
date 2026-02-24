@@ -1,65 +1,148 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:background="#FF1A1A1A"
-    android:padding="32dp">
+    android:background="#FF0F1923">
 
-    <!-- Alarm Icon -->
-    <ImageView
-        android:layout_width="120dp"
-        android:layout_height="120dp"
-        android:src="@android:drawable/ic_lock_idle_alarm"
-        android:tint="#FFFFFF"
-        android:layout_marginBottom="32dp"
-        android:contentDescription="@string/alarm_icon" />
+    <!-- ── Subtle radial glow (smaller, behind icon) ── -->
+    <View
+        android:layout_width="160dp"
+        android:layout_height="160dp"
+        android:background="@drawable/alarm_ring_bg"
+        android:alpha="0.5"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/cardContent"
+        app:layout_constraintVertical_bias="0.6" />
 
-    <!-- Event Title -->
-    <TextView
-        android:id="@+id/eventTitle"
-        android:layout_width="wrap_content"
+    <!-- ── Icon ring ── -->
+    <FrameLayout
+        android:id="@+id/iconRing"
+        android:layout_width="88dp"
+        android:layout_height="88dp"
+        android:background="@drawable/alarm_ring_bg"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/cardContent"
+        app:layout_constraintVertical_bias="0.6">
+
+        <ImageView
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_event_24px"
+            android:contentDescription="@string/alarm_icon" />
+
+    </FrameLayout>
+
+    <!-- ── Content card ── -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/cardContent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="Event Reminder"
-        android:textSize="28sp"
-        android:textStyle="bold"
-        android:textColor="#FFFFFF"
-        android:gravity="center"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginHorizontal="24dp"
+        app:cardCornerRadius="24dp"
+        app:cardElevation="8dp"
+        app:cardBackgroundColor="#FF1C2733"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintVertical_bias="0.52">
 
-    <!-- Event Time -->
-    <TextView
-        android:id="@+id/eventTime"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Starting in 5 minutes"
-        android:textSize="18sp"
-        android:textColor="#CCCCCC"
-        android:gravity="center"
-        android:layout_marginBottom="48dp" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="28dp">
 
-    <!-- Snooze Button -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/snoozeButton"
-        android:layout_width="200dp"
-        android:layout_height="wrap_content"
-        android:text="Snooze (5 min)"
-        android:textSize="16sp"
-        android:layout_marginBottom="16dp"
-        android:backgroundTint="#FF4CAF50"
-        android:textColor="#FFFFFF"
-        style="@style/Widget.MaterialComponents.Button" />
+            <!-- Pill label -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="EVENT REMINDER"
+                android:textSize="11sp"
+                android:textColor="#4285F4"
+                android:textStyle="bold"
+                android:letterSpacing="0.15"
+                android:background="@drawable/light_blue_bg_pill"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="5dp"
+                android:layout_marginBottom="16dp" />
 
-    <!-- Dismiss Button -->
+            <!-- Event Title -->
+            <TextView
+                android:id="@+id/eventTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Event Title"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"
+                android:gravity="center"
+                android:layout_marginBottom="10dp" />
+
+            <!-- Blue accent divider -->
+            <View
+                android:layout_width="40dp"
+                android:layout_height="2dp"
+                android:background="#4285F4"
+                android:layout_marginBottom="12dp" />
+
+            <!-- Event Time -->
+            <TextView
+                android:id="@+id/eventTime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Starting in 5 minutes"
+                android:textSize="15sp"
+                android:textColor="#8AB4F8"
+                android:gravity="center" />
+
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
+
+    <!-- ── Dismiss Button (primary, full width) ── -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/dismissButton"
-        android:layout_width="200dp"
-        android:layout_height="wrap_content"
+        android:layout_width="0dp"
+        android:layout_height="52dp"
+        android:layout_marginHorizontal="24dp"
+        android:layout_marginTop="20dp"
         android:text="Dismiss"
-        android:textSize="16sp"
-        android:backgroundTint="#FFF44336"
-        android:textColor="#FFFFFF"
-        style="@style/Widget.MaterialComponents.Button" />
+        android:textSize="15sp"
+        android:textColor="@android:color/white"
+        android:letterSpacing="0.05"
+        app:backgroundTint="#4285F4"
+        app:cornerRadius="14dp"
+        style="@style/Widget.MaterialComponents.Button"
+        app:layout_constraintTop_toBottomOf="@id/cardContent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
-</LinearLayout>
+    <!-- ── Snooze Button (secondary, below dismiss) ── -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/snoozeButton"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:layout_marginHorizontal="24dp"
+        android:layout_marginTop="10dp"
+        android:text="Snooze for 5 minutes"
+        android:textSize="14sp"
+        android:textColor="#8AB4F8"
+        android:letterSpacing="0.03"
+        app:backgroundTint="@android:color/transparent"
+        app:strokeColor="#334285F4"
+        app:strokeWidth="1dp"
+        app:cornerRadius="14dp"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        app:layout_constraintTop_toBottomOf="@id/dismissButton"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
