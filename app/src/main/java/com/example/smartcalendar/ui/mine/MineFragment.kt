@@ -1,4 +1,4 @@
-package com.example.smartcalendar.ui.mine
+﻿package com.example.smartcalendar.ui.mine
 
 import android.app.AlertDialog
 import android.content.Intent
@@ -225,7 +225,7 @@ class MineFragment : Fragment() {
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
             val view = LayoutInflater.from(parent.context)
-                .inflate(android.R.layout.simple_list_item_2, parent, false)
+                .inflate(R.layout.item_mine_calendar, parent, false)
             return ViewHolder(view)
         }
 
@@ -236,14 +236,19 @@ class MineFragment : Fragment() {
         override fun getItemCount() = calendars.size
 
         inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-            private val text1 = itemView.findViewById<android.widget.TextView>(android.R.id.text1)
-            private val text2 = itemView.findViewById<android.widget.TextView>(android.R.id.text2)
+            private val colorDot = itemView.findViewById<View>(R.id.calendarColorDot)
+            private val nameView = itemView.findViewById<android.widget.TextView>(R.id.calendarName)
+            private val subtitleView = itemView.findViewById<android.widget.TextView>(R.id.calendarSubtitle)
 
             fun bind(calendar: LocalCalendar) {
-                text1.text = calendar.name
-                text1.setTextColor(calendar.color)
-                text2.text = if (calendar.isDefault) "Default" else "Custom"
-                text2.setTextColor(Color.GRAY)
+                nameView.text = calendar.name
+
+                val dot = GradientDrawable()
+                dot.shape = GradientDrawable.OVAL
+                dot.setColor(calendar.color)
+                colorDot.background = dot
+
+                subtitleView.text = if (calendar.isDefault) "Default" else "Custom"
 
                 itemView.setOnClickListener { onEditClick(calendar) }
                 itemView.setOnLongClickListener {

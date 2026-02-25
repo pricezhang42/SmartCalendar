@@ -24,18 +24,20 @@
         android:clipToPadding="false"
         android:paddingHorizontal="16dp" />
 
-    <!-- Add New Calendar -->
+    <!-- Add New Calendar: black icon + black text, slightly compact padding -->
     <TextView
         android:id="@+id/addCalendarButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="16dp"
+        android:paddingVertical="12dp"
+        android:paddingHorizontal="16dp"
         android:text="@string/add_calendar_button"
         android:textSize="16sp"
-        android:textColor="@color/primary_blue"
+        android:textColor="@android:color/black"
         android:drawablePadding="12dp"
         android:background="?attr/selectableItemBackground"
-        app:drawableStartCompat="@android:drawable/ic_input_add" />
+        app:drawableStartCompat="@android:drawable/ic_input_add"
+        app:drawableTint="@android:color/black" />
 
     <TextView
         android:id="@+id/logoutButton"
