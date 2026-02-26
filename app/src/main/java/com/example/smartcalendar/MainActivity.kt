@@ -149,6 +149,31 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
             binding.drawerLayout.openDrawer(GravityCompat.START)
         }
 
+        // Settings icon → Mine tab (via bottom nav so back stack stays clean)
+        val headerView = binding.navView.getHeaderView(0)
+        headerView.findViewById<android.widget.ImageView>(R.id.settingsIcon)?.setOnClickListener {
+            binding.bottomNav.selectedItemId = R.id.MineFragment
+            binding.drawerLayout.closeDrawer(GravityCompat.START)
+        }
+
+        // Dynamically sync content paddingTop to the real header height (which includes
+        // status-bar inset injected by fitsSystemWindows — static 72/96dp is unreliable).
+        val contentLayout = binding.navView.findViewById<LinearLayout>(R.id.drawerContentLayout)
+        headerView.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                headerView.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                val headerHeight = headerView.height
+                if (headerHeight > 0 && contentLayout != null) {
+                    contentLayout.setPadding(
+                        contentLayout.paddingLeft,
+                        headerHeight,
+                        contentLayout.paddingRight,
+                        contentLayout.paddingBottom
+                    )
+                }
+            }
+        })
+
         // Week view option
         binding.navView.findViewById<LinearLayout>(R.id.weekOption)?.setOnClickListener {
             getCurrentCalendarFragment()?.let { fragment ->

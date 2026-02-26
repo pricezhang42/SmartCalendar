@@ -129,9 +129,9 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/reviewButton"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="48dp"
-                android:layout_weight="1"
+                android:paddingHorizontal="16dp"
                 android:text="@string/ai_review_changes"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 app:cornerRadius="24dp" />

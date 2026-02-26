@@ -11,7 +11,8 @@
     <!-- Main content -->
     <androidx.coordinatorlayout.widget.CoordinatorLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:fitsSystemWindows="true">
 
         <com.google.android.material.appbar.AppBarLayout
             android:id="@+id/appBarLayout"
@@ -80,10 +81,11 @@
         app:headerLayout="@layout/nav_header_drawer">
 
         <LinearLayout
+            android:id="@+id/drawerContentLayout"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
-            android:paddingTop="72dp">
+            android:paddingTop="96dp">
 
             <!-- View Mode Options -->
             <LinearLayout
@@ -92,7 +94,7 @@
                 android:layout_height="48dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
+                android:paddingHorizontal="20dp"
                 android:background="?attr/selectableItemBackground">
 
                 <ImageView
@@ -124,7 +126,7 @@
                 android:layout_height="48dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
+                android:paddingHorizontal="20dp"
                 android:background="?attr/selectableItemBackground">
 
                 <ImageView
@@ -156,7 +158,7 @@
                 android:layout_height="48dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
+                android:paddingHorizontal="20dp"
                 android:background="?attr/selectableItemBackground">
 
                 <ImageView
@@ -181,7 +183,7 @@
                 android:layout_height="48dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
+                android:paddingHorizontal="20dp"
                 android:background="@color/light_blue_bg">
 
                 <ImageView
@@ -208,7 +210,7 @@
                 android:layout_height="48dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
+                android:paddingHorizontal="20dp"
                 android:background="?attr/selectableItemBackground">
 
                 <ImageView
@@ -245,7 +247,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginHorizontal="16dp"
+                android:layout_marginHorizontal="20dp"
                 android:text="@string/calendars_header"
                 android:textSize="14sp"
                 android:textStyle="bold"
@@ -254,7 +256,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginHorizontal="16dp"
+                android:layout_marginHorizontal="20dp"
                 android:layout_marginBottom="8dp"
                 android:text="@string/calendars_subtitle"
                 android:textSize="12sp"
@@ -265,7 +267,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:paddingHorizontal="16dp" />
+                android:paddingHorizontal="20dp" />
 
             <!-- Divider -->
             <View
@@ -278,7 +280,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginHorizontal="16dp"
+                android:layout_marginHorizontal="20dp"
                 android:layout_marginTop="8dp"
                 android:text="@string/sync_header"
                 android:textSize="14sp"
@@ -290,7 +292,7 @@
                 android:id="@+id/importButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginHorizontal="16dp"
+                android:layout_marginHorizontal="20dp"
                 android:layout_marginTop="8dp"
                 android:text="@string/import_calendar"
                 app:icon="@android:drawable/ic_menu_upload"
@@ -301,7 +303,7 @@
                 android:id="@+id/exportButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginHorizontal="16dp"
+                android:layout_marginHorizontal="20dp"
                 android:layout_marginTop="4dp"
                 android:text="@string/export_calendar"
                 app:icon="@android:drawable/ic_menu_save"
