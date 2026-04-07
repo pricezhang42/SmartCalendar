@@ -12,6 +12,12 @@
         tools:layout="@layout/fragment_calendar" />
 
     <fragment
+        android:id="@+id/CaliFragment"
+        android:name="com.example.smartcalendar.ui.ai.CaliFragment"
+        android:label="@string/ai_assistant"
+        tools:layout="@layout/fragment_cali" />
+
+    <fragment
         android:id="@+id/MineFragment"
         android:name="com.example.smartcalendar.ui.mine.MineFragment"
         android:label="@string/nav_mine"

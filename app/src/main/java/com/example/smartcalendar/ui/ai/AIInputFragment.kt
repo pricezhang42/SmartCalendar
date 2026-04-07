@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -30,6 +31,8 @@ class AIInputFragment : Fragment() {
 
     private lateinit var aiAssistant: AICalendarAssistant
     private lateinit var chatAdapter: ChatMessageAdapter
+
+    private val caliViewModel: CaliViewModel by activityViewModels()
 
     private var currentSessionId: String? = null
     private val messages = mutableListOf<ChatMessage>()
@@ -60,6 +63,11 @@ class AIInputFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         aiAssistant = AICalendarAssistant.getInstance(requireContext())
+
+        // Show header only when hosted in AIAssistantActivity (not in bottom nav tab)
+        if (activity is AIAssistantActivity) {
+            binding.headerContainer.visibility = View.VISIBLE
+        }
 
         setupChat()
         setupListeners()
@@ -105,6 +113,14 @@ class AIInputFragment : Fragment() {
     }
 
     private fun setupChat() {
+        // Restore messages and session from ViewModel if available
+        if (messages.isEmpty() && caliViewModel.messages.isNotEmpty()) {
+            messages.addAll(caliViewModel.messages)
+        }
+        if (currentSessionId == null && caliViewModel.currentSessionId != null) {
+            currentSessionId = caliViewModel.currentSessionId
+        }
+
         chatAdapter = ChatMessageAdapter(messages)
         val layoutManager = LinearLayoutManager(requireContext()).apply {
             stackFromEnd = true
@@ -225,6 +241,7 @@ class AIInputFragment : Fragment() {
     private fun handleSuccess(output: AIProcessingOutput) {
         if (currentSessionId == null) {
             currentSessionId = output.sessionId
+            caliViewModel.currentSessionId = output.sessionId
             onSessionCreated?.invoke(output.sessionId)
         }
 
@@ -238,6 +255,9 @@ class AIInputFragment : Fragment() {
         chatAdapter.addMessage(message)
         binding.chatRecyclerView.scrollToPosition(chatAdapter.itemCount - 1)
         binding.errorText.visibility = View.GONE
+        // Persist to ViewModel for tab switch survival
+        caliViewModel.messages.clear()
+        caliViewModel.messages.addAll(messages)
     }
 
     private fun setLoading(loading: Boolean) {

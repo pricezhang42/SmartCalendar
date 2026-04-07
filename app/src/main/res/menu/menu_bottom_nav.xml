@@ -5,6 +5,10 @@
         android:icon="@drawable/ic_calendar_month_24px"
         android:title="@string/nav_calendar" />
     <item
+        android:id="@+id/CaliFragment"
+        android:icon="@drawable/ic_star_shine_24px"
+        android:title="@string/ai_assistant" />
+    <item
         android:id="@+id/MineFragment"
         android:icon="@drawable/ic_person_24px"
         android:title="@string/nav_mine" />

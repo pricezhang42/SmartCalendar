@@ -162,6 +162,7 @@ class GeminiProvider : AIService {
         }
         return """
 You are a calendar assistant. Extract calendar events from the following text.
+If the user is asking to SEARCH, FIND, or LOOK UP events (e.g., "search for conferences", "find rampup events", "what events are happening in..."), use your Google Search tool to find real events from the internet and return them with accurate titles, dates, times, and locations from the search results. Do NOT create a placeholder event with the search query as the title.
 
 Current date: $currentDate
 User timezone: $timezone
@@ -173,7 +174,7 @@ Text to parse:
 "$text"
 
 Instructions:
-1. Extract ALL events mentioned in the text
+1. Extract ALL events mentioned in the text, or search the internet for events if the user asks
 2. Parse relative dates (tomorrow, next Monday, etc.) relative to the current date
 3. If no specific time is given, leave startTime and endTime as null
 4. For all-day events (like birthdays, holidays), set isAllDay to true
@@ -373,7 +374,12 @@ $eventsJson
 
 User instruction: "$instruction"
 
-Apply the instruction to the relevant event(s) and return the modified events.
+Determine the user's intent:
+- If the instruction is asking to SEARCH, FIND, or LOOK UP new events (e.g., "search for conferences", "find events in my area", "look up holidays"), use your Google Search tool to find real events from the internet. Return the existing events PLUS any new events you found, with accurate dates, times, locations, and titles from the search results.
+- If the instruction is asking to MODIFY existing events (e.g., "change the time", "make it red", "move to Tuesday"), apply the changes to the relevant event(s) and return the modified list.
+- If the instruction is asking to ADD a new event by description (e.g., "also add a meeting tomorrow"), create the new event and append it to the existing list.
+
+For modifications:
 If a single occurrence changes time/date, remove that date from the recurring series via exceptionDates and add a new single event at the new time.
 Apply color changes when the user asks (e.g., "make it red").
 
@@ -487,7 +493,8 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
                     GeminiRequestContent(
                         parts = parts
                     )
-                )
+                ),
+                tools = listOf(GeminiTool(google_search = GeminiGoogleSearch()))
             )
             var lastError: Exception? = null
             for (modelName in MODEL_CANDIDATES) {
@@ -529,7 +536,18 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
 
     @Serializable
     private data class GeminiGenerateRequest(
-        val contents: List<GeminiRequestContent>
+        val contents: List<GeminiRequestContent>,
+        val tools: List<GeminiTool>? = null
+    )
+
+    @Serializable
+    private data class GeminiTool(
+        val google_search: GeminiGoogleSearch? = null
+    )
+
+    @Serializable
+    private data class GeminiGoogleSearch(
+        val placeholder: String? = null
     )
 
     @Serializable

@@ -136,6 +136,10 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
                     }
                     binding.fab.visibility = android.view.View.VISIBLE
                 }
+                R.id.CaliFragment -> {
+                    supportActionBar?.title = getString(R.string.ai_assistant)
+                    binding.fab.visibility = android.view.View.GONE
+                }
                 R.id.MineFragment -> {
                     supportActionBar?.title = getString(R.string.nav_mine)
                     binding.fab.visibility = android.view.View.GONE
@@ -288,7 +292,7 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
     }
 
     private fun openAIAssistant() {
-        aiAssistantLauncher.launch(Intent(this, AIAssistantActivity::class.java))
+        binding.bottomNav.selectedItemId = R.id.CaliFragment
     }
 
     private fun checkPermissions() {
@@ -467,10 +471,6 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
 
     override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
         return when (item.itemId) {
-            R.id.action_ai -> {
-                openAIAssistant()
-                true
-            }
             R.id.action_sync -> {
                 performSync()
                 true
