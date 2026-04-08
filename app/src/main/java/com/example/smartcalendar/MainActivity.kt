@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
     private lateinit var realtimeSync: RealtimeSync
 
     private var syncMenuItem: android.view.MenuItem? = null
+    private var newChatMenuItem: android.view.MenuItem? = null
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -135,14 +136,17 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
                         supportActionBar?.title = title
                     }
                     binding.fab.visibility = android.view.View.VISIBLE
+                    newChatMenuItem?.isVisible = false
                 }
                 R.id.CaliFragment -> {
                     supportActionBar?.title = getString(R.string.ai_assistant)
                     binding.fab.visibility = android.view.View.GONE
+                    newChatMenuItem?.isVisible = true
                 }
                 R.id.MineFragment -> {
                     supportActionBar?.title = getString(R.string.nav_mine)
                     binding.fab.visibility = android.view.View.GONE
+                    newChatMenuItem?.isVisible = false
                 }
             }
         }
@@ -466,17 +470,47 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
     override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
         menuInflater.inflate(R.menu.menu_main, menu)
         syncMenuItem = menu.findItem(R.id.action_sync)
+        newChatMenuItem = menu.findItem(R.id.action_new_chat)
         return true
     }
 
     override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
         return when (item.itemId) {
+            R.id.action_new_chat -> {
+                startNewCaliSession()
+                true
+            }
             R.id.action_sync -> {
                 performSync()
                 true
             }
             else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    private fun startNewCaliSession() {
+        val caliViewModel = androidx.lifecycle.ViewModelProvider(this)[com.example.smartcalendar.ui.ai.CaliViewModel::class.java]
+
+        // If there's nothing to clear, just reset silently
+        if (caliViewModel.messages.isEmpty() && caliViewModel.currentSessionId == null) {
+            return
+        }
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("New Chat")
+            .setMessage("The current conversation will be cleared. Are you sure you want to start a new session?")
+            .setPositiveButton("Start New") { _, _ ->
+                caliViewModel.messages.clear()
+                caliViewModel.currentSessionId = null
+                caliViewModel.isInPreviewMode = false
+
+                val navHostFragment = supportFragmentManager
+                    .findFragmentById(R.id.nav_host_fragment_content_main) as androidx.navigation.fragment.NavHostFragment
+                val navController = navHostFragment.navController
+                navController.navigate(R.id.CaliFragment)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun performSync() {

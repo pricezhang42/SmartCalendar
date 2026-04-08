@@ -100,13 +100,6 @@ class AIPreviewFragment : Fragment() {
     }
 
     private fun setupListeners() {
-        binding.backButton.setOnClickListener {
-            if (selectionMode) {
-                exitSelectionMode()
-            } else {
-                onBack?.invoke()
-            }
-        }
 
         // Calendar selection
         binding.calendarName.setOnClickListener { showCalendarPicker() }
@@ -117,7 +110,7 @@ class AIPreviewFragment : Fragment() {
         }
 
         binding.rejectButton.setOnClickListener {
-            rejectAll()
+            onBack?.invoke()
         }
 
         binding.deleteSelectedButton.setOnClickListener {

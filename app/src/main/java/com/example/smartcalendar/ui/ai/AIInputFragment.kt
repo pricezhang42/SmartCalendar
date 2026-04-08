@@ -266,11 +266,13 @@ class AIInputFragment : Fragment() {
                             val finalText = update.output.message?.takeIf { it.isNotBlank() }
                                 ?: getString(R.string.ai_review_ready)
                             chatAdapter.replaceLast(ChatMessage(ChatRole.ASSISTANT, finalText))
+                            syncMessagesToViewModel()
                             handleSuccess(update.output, skipMessage = true)
                         }
                         is StreamUpdate.Error -> {
                             setLoading(false)
                             chatAdapter.replaceLast(ChatMessage(ChatRole.ASSISTANT, update.message, isError = true))
+                            syncMessagesToViewModel()
                         }
                     }
                 }
@@ -393,9 +395,13 @@ class AIInputFragment : Fragment() {
         chatAdapter.addMessage(message)
         binding.chatRecyclerView.scrollToPosition(chatAdapter.itemCount - 1)
         binding.errorText.visibility = View.GONE
-        // Persist to ViewModel for tab switch survival
+        // Persist to ViewModel — skip typing indicator
+        syncMessagesToViewModel()
+    }
+
+    private fun syncMessagesToViewModel() {
         caliViewModel.messages.clear()
-        caliViewModel.messages.addAll(messages)
+        caliViewModel.messages.addAll(messages.filter { it.text != ChatMessageAdapter.TYPING_INDICATOR })
     }
 
     private fun setLoading(loading: Boolean, showSpinner: Boolean = true) {

@@ -3,6 +3,12 @@
     xmlns:tools="http://schemas.android.com/tools"
     tools:context="com.example.smartcalendar.MainActivity">
     <item
+        android:id="@+id/action_new_chat"
+        android:icon="@drawable/ic_new_chat_24px"
+        android:title="New Chat"
+        android:visible="false"
+        app:showAsAction="ifRoom" />
+    <item
         android:id="@+id/action_sync"
         android:icon="@drawable/ic_sync_24px"
         android:title="@string/action_sync"
