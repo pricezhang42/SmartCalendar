@@ -28,9 +28,8 @@ class GeminiProvider : AIService {
 
     companion object {
         private const val TAG = "GeminiProvider"
-        private val MODEL_CANDIDATES = listOf(
-            "gemini-2.5-flash"
-        )
+        private const val MODEL = "gemini-2.5-flash"
+        private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
     }
 
     private val json = Json {
@@ -53,29 +52,29 @@ class GeminiProvider : AIService {
         }
     }
 
+    /**
+     * Shared helper: call Gemini, parse the JSON response, handle errors.
+     */
+    private suspend fun executeAndParse(
+        prompt: String,
+        attachmentMimeType: String? = null,
+        attachmentBytes: ByteArray? = null
+    ): ProcessingResult {
+        if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
+            return ProcessingResult.Error("Gemini API key not configured")
+        }
+        return generateContent(prompt, attachmentMimeType, attachmentBytes).fold(
+            onSuccess = { parseGeminiResponse(it) },
+            onFailure = { ProcessingResult.Error("Failed to process: ${it.message}", it as? Exception) }
+        )
+    }
+
     override suspend fun parseText(
         text: String,
         currentDate: String,
         timezone: String,
         calendarContext: List<CalendarContextEvent>?
-    ): ProcessingResult {
-        if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
-            return ProcessingResult.Error("Gemini API key not configured")
-        }
-
-        val prompt = buildTextParsingPrompt(text, currentDate, timezone, calendarContext)
-
-        return generateContent(prompt).fold(
-            onSuccess = { responseText ->
-                Log.d(TAG, "Gemini response: $responseText")
-                parseGeminiResponse(responseText)
-            },
-            onFailure = { error ->
-                Log.e(TAG, "Error calling Gemini API", error)
-                ProcessingResult.Error("Failed to process: ${error.message}", error as? Exception)
-            }
-        )
-    }
+    ): ProcessingResult = executeAndParse(buildTextParsingPrompt(text, currentDate, timezone, calendarContext))
 
     override fun streamParseText(
         text: String,
@@ -91,101 +90,59 @@ class GeminiProvider : AIService {
         val prompt = buildTextParsingPrompt(text, currentDate, timezone, calendarContext)
 
         try {
+            // Try streaming first — collect accumulated text
             var fullText = ""
-            streamGenerateContent(prompt).collect { partialText ->
-                fullText = partialText
-                emit(StreamChunk.Partial(partialText))
+            streamGenerateContent(prompt).collect { fullText = it }
+
+            // If streaming returned empty (common with google_search), fall back to non-streaming
+            if (fullText.isBlank()) {
+                fullText = generateContent(prompt).getOrElse {
+                    emit(StreamChunk.Complete(ProcessingResult.Error("Failed to process: ${it.message}", it as? Exception)))
+                    return@flow
+                }
             }
 
-            if (fullText.isNotBlank()) {
-                Log.d(TAG, "Streaming complete: $fullText")
-                emit(StreamChunk.Complete(parseGeminiResponse(fullText)))
-            } else {
-                // Streaming returned empty/whitespace — fall back to non-streaming
-                Log.d(TAG, "Streaming empty, falling back to non-streaming")
-                emit(StreamChunk.Partial("Searching..."))
-                val fallbackResult = generateContent(prompt)
-                fallbackResult.fold(
-                    onSuccess = { responseText ->
-                        Log.d(TAG, "Fallback response: $responseText")
-                        emit(StreamChunk.Complete(parseGeminiResponse(responseText)))
-                    },
-                    onFailure = { error ->
-                        emit(StreamChunk.Complete(ProcessingResult.Error("Failed to process: ${error.message}", error as? Exception)))
-                    }
-                )
-            }
+            emit(StreamChunk.Complete(parseGeminiResponse(fullText)))
         } catch (e: Exception) {
             Log.e(TAG, "Streaming error", e)
             emit(StreamChunk.Complete(ProcessingResult.Error("Failed to process: ${e.message}", e)))
         }
     }
 
-    private fun streamGenerateContent(
-        prompt: String,
-        attachmentMimeType: String? = null,
-        attachmentBytes: ByteArray? = null
-    ): Flow<String> = flow {
-        val parts = mutableListOf<GeminiPart>()
-        parts.add(GeminiPart(text = prompt))
-
-        if (attachmentMimeType != null && attachmentBytes != null) {
-            val encoded = Base64.encodeToString(attachmentBytes, Base64.NO_WRAP)
-            parts.add(GeminiPart(inlineData = GeminiInlineData(mimeType = attachmentMimeType, data = encoded)))
-        }
-
-        val request = GeminiGenerateRequest(
-            contents = listOf(GeminiRequestContent(parts = parts)),
-            tools = listOf(GeminiTool(google_search = GeminiGoogleSearch()))
-        )
-        val requestBody = json.encodeToString(GeminiGenerateRequest.serializer(), request)
-
-        // Use primary model only for streaming — fallback handled by non-streaming path
-        val modelName = MODEL_CANDIDATES.first()
+    /**
+     * Stream Gemini response via SSE. Returns accumulated text chunks.
+     * If streaming returns empty (common with google_search), the caller falls back to non-streaming.
+     */
+    private fun streamGenerateContent(prompt: String): Flow<String> = flow {
         try {
+            val body = buildRequestBody(prompt)
             val accumulated = StringBuilder()
 
-            httpClient.preparePost(
-                "https://generativelanguage.googleapis.com/v1beta/models/$modelName:streamGenerateContent"
-                ) {
-                    url { parameters.append("key", BuildConfig.GEMINI_API_KEY); parameters.append("alt", "sse") }
-                    contentType(ContentType.Application.Json)
-                    setBody(requestBody)
-                }.execute { response ->
-                    if (!response.status.isSuccess()) {
-                        Log.w(TAG, "Streaming $modelName failed: ${response.status}")
-                        return@execute
-                    }
+            httpClient.preparePost("$BASE_URL/$MODEL:streamGenerateContent") {
+                url { parameters.append("key", BuildConfig.GEMINI_API_KEY); parameters.append("alt", "sse") }
+                contentType(ContentType.Application.Json)
+                setBody(body)
+            }.execute { response ->
+                if (!response.status.isSuccess()) return@execute
 
-                    val channel = response.bodyAsChannel()
-                    while (!channel.isClosedForRead) {
-                        val line = channel.readUTF8Line() ?: break
-                        if (!line.startsWith("data: ")) continue
-                        val jsonData = line.removePrefix("data: ").trim()
-                        if (jsonData == "[DONE]" || jsonData.isEmpty()) continue
+                val channel = response.bodyAsChannel()
+                while (!channel.isClosedForRead) {
+                    val line = channel.readUTF8Line() ?: break
+                    if (!line.startsWith("data: ")) continue
+                    val jsonData = line.removePrefix("data: ").trim()
+                    if (jsonData == "[DONE]" || jsonData.isEmpty()) continue
 
-                        try {
-                            Log.d(TAG, "SSE raw chunk: ${jsonData.take(500)}")
-                            val parsed = json.decodeFromString(GeminiGenerateResponse.serializer(), jsonData)
-                            val chunkText = parsed.candidates
-                                .firstOrNull()?.content?.parts?.firstOrNull()?.text
-                            if (!chunkText.isNullOrBlank()) {
-                                accumulated.append(chunkText)
-                                emit(accumulated.toString())
-                            } else {
-                                Log.d(TAG, "SSE chunk had no text, candidates count: ${parsed.candidates.size}")
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Failed to parse SSE chunk: ${jsonData.take(500)}", e)
+                    try {
+                        val text = extractResponseText(jsonData)
+                        if (text != null) {
+                            accumulated.append(text)
+                            emit(accumulated.toString())
                         }
-                    }
+                    } catch (_: Exception) { }
                 }
-
-            if (accumulated.isNotEmpty()) return@flow
-            // Streaming returned nothing — the fallback in streamParseText handles this
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "Streaming $modelName failed: ${e.message}")
-            // Don't throw — let streamParseText fallback to non-streaming
+            Log.w(TAG, "Streaming failed: ${e.message}")
         }
     }
 
@@ -195,24 +152,7 @@ class GeminiProvider : AIService {
         currentDate: String,
         timezone: String,
         calendarContext: List<CalendarContextEvent>?
-    ): ProcessingResult {
-        if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
-            return ProcessingResult.Error("Gemini API key not configured")
-        }
-
-        val prompt = buildImageParsingPrompt(currentDate, timezone, calendarContext)
-
-        return generateContent(prompt, mimeType, imageBytes).fold(
-            onSuccess = { responseText ->
-                Log.d(TAG, "Gemini image response: $responseText")
-                parseGeminiResponse(responseText)
-            },
-            onFailure = { error ->
-                Log.e(TAG, "Error calling Gemini API for image", error)
-                ProcessingResult.Error("Failed to process image: ${error.message}", error as? Exception)
-            }
-        )
-    }
+    ): ProcessingResult = executeAndParse(buildImageParsingPrompt(currentDate, timezone, calendarContext), mimeType, imageBytes)
 
     override suspend fun parseDocument(
         documentBytes: ByteArray,
@@ -220,46 +160,12 @@ class GeminiProvider : AIService {
         currentDate: String,
         timezone: String,
         calendarContext: List<CalendarContextEvent>?
-    ): ProcessingResult {
-        if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
-            return ProcessingResult.Error("Gemini API key not configured")
-        }
-
-        val prompt = buildDocumentParsingPrompt(currentDate, timezone, calendarContext)
-
-        return generateContent(prompt, mimeType, documentBytes).fold(
-            onSuccess = { responseText ->
-                Log.d(TAG, "Gemini document response: $responseText")
-                parseGeminiResponse(responseText)
-            },
-            onFailure = { error ->
-                Log.e(TAG, "Error calling Gemini API for document", error)
-                ProcessingResult.Error("Failed to process document: ${error.message}", error as? Exception)
-            }
-        )
-    }
+    ): ProcessingResult = executeAndParse(buildDocumentParsingPrompt(currentDate, timezone, calendarContext), mimeType, documentBytes)
 
     override suspend fun refineEvents(
         events: List<ExtractedEvent>,
         instruction: String
-    ): ProcessingResult {
-        if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
-            return ProcessingResult.Error("Gemini API key not configured")
-        }
-
-        val prompt = buildRefinementPrompt(events, instruction)
-
-        return generateContent(prompt).fold(
-            onSuccess = { responseText ->
-                Log.d(TAG, "Gemini refinement response: $responseText")
-                parseGeminiResponse(responseText)
-            },
-            onFailure = { error ->
-                Log.e(TAG, "Error refining events", error)
-                ProcessingResult.Error("Failed to refine: ${error.message}", error as? Exception)
-            }
-        )
-    }
+    ): ProcessingResult = executeAndParse(buildRefinementPrompt(events, instruction))
 
     private fun buildTextParsingPrompt(
         text: String,
@@ -583,69 +489,59 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
         return if (end > start) trimmed.substring(start, end + 1) else trimmed
     }
 
+    /**
+     * Build the JSON request body for Gemini API.
+     */
+    private fun buildRequestBody(
+        prompt: String,
+        attachmentMimeType: String? = null,
+        attachmentBytes: ByteArray? = null
+    ): String {
+        val parts = mutableListOf(GeminiPart(text = prompt))
+        if (attachmentMimeType != null && attachmentBytes != null) {
+            parts.add(GeminiPart(inlineData = GeminiInlineData(
+                mimeType = attachmentMimeType,
+                data = Base64.encodeToString(attachmentBytes, Base64.NO_WRAP)
+            )))
+        }
+        val request = GeminiGenerateRequest(
+            contents = listOf(GeminiRequestContent(parts = parts)),
+            tools = listOf(GeminiTool(google_search = GeminiGoogleSearch()))
+        )
+        return json.encodeToString(GeminiGenerateRequest.serializer(), request)
+    }
+
+    /**
+     * Extract text from a Gemini response body. Returns null if empty.
+     */
+    private fun extractResponseText(responseBody: String): String? {
+        val parsed = json.decodeFromString(GeminiGenerateResponse.serializer(), responseBody)
+        return parsed.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    private val EMPTY_SEARCH_RESPONSE = """{"message": "I searched but couldn't find specific details for your request. Could you try rephrasing or being more specific?", "events": []}"""
+
     private suspend fun generateContent(
         prompt: String,
         attachmentMimeType: String? = null,
         attachmentBytes: ByteArray? = null
     ): Result<String> {
         return try {
-            val parts = mutableListOf<GeminiPart>()
-            parts.add(GeminiPart(text = prompt))
-            if (attachmentMimeType != null && attachmentBytes != null) {
-                val encoded = Base64.encodeToString(attachmentBytes, Base64.NO_WRAP)
-                parts.add(
-                    GeminiPart(
-                        inlineData = GeminiInlineData(
-                            mimeType = attachmentMimeType,
-                            data = encoded
-                        )
-                    )
-                )
+            val body = buildRequestBody(prompt, attachmentMimeType, attachmentBytes)
+            val response = httpClient.post("$BASE_URL/$MODEL:generateContent") {
+                url { parameters.append("key", BuildConfig.GEMINI_API_KEY) }
+                contentType(ContentType.Application.Json)
+                setBody(body)
             }
-            val request = GeminiGenerateRequest(
-                contents = listOf(
-                    GeminiRequestContent(
-                        parts = parts
-                    )
-                ),
-                tools = listOf(GeminiTool(google_search = GeminiGoogleSearch()))
-            )
-            var lastError: Exception? = null
-            for (modelName in MODEL_CANDIDATES) {
-                val response = httpClient.post(
-                    "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent"
-                ) {
-                    url {
-                        parameters.append("key", BuildConfig.GEMINI_API_KEY)
-                    }
-                    contentType(ContentType.Application.Json)
-                    setBody(json.encodeToString(GeminiGenerateRequest.serializer(), request))
-                }
-                val responseBody = response.bodyAsText()
-                if (!response.status.isSuccess()) {
-                    lastError = Exception("Gemini API error: ${response.status} $responseBody")
-                    continue
-                }
+            val responseBody = response.bodyAsText()
 
-                val parsed = json.decodeFromString(GeminiGenerateResponse.serializer(), responseBody)
-                val text = parsed.candidates
-                    .firstOrNull()
-                    ?.content
-                    ?.parts
-                    ?.firstOrNull()
-                    ?.text
-                    ?.trim()
-
-                if (!text.isNullOrBlank()) {
-                    return Result.success(text)
-                }
-
-                // Gemini searched but returned no text content — return a helpful message
-                Log.w(TAG, "Model $modelName returned empty text. Full response: ${responseBody.take(500)}")
-                return Result.success("""{"message": "I searched but couldn't find specific details for your request. Could you try rephrasing or being more specific?", "events": []}""")
+            if (!response.status.isSuccess()) {
+                return Result.failure(Exception("Gemini API error: ${response.status} $responseBody"))
             }
 
-            Result.failure(lastError ?: Exception("Failed to call Gemini API"))
+            val text = extractResponseText(responseBody)
+            Result.success(text ?: EMPTY_SEARCH_RESPONSE)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -663,9 +559,7 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
     )
 
     @Serializable
-    private data class GeminiGoogleSearch(
-        val placeholder: String? = null
-    )
+    private class GeminiGoogleSearch
 
     @Serializable
     private data class GeminiRequestContent(

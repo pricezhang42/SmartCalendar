@@ -283,7 +283,6 @@ class AIPreviewFragment : Fragment() {
     }
 
     fun updateSession(newSessionId: String) {
-        if (newSessionId == sessionId) return
         sessionId = newSessionId
         if (_binding == null) return
         exitSelectionMode()

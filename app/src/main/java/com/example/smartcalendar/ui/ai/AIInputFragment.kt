@@ -109,51 +109,39 @@ class AIInputFragment : Fragment() {
         }
     }
 
-    private fun handleVoiceState(state: WhisperTranscriber.State) {
-        val caliFragment = parentFragment as? CaliFragment
+    private fun resetVoiceButton() {
+        binding.voiceButton.setColorFilter(
+            ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
+        )
+        binding.voiceButton.isEnabled = true
+        binding.progressBar.visibility = View.GONE
+        (parentFragment as? CaliFragment)?.hideAudioOverlay()
+    }
 
+    private fun handleVoiceState(state: WhisperTranscriber.State) {
         when (state) {
-            is WhisperTranscriber.State.Idle -> {
-                binding.voiceButton.setColorFilter(
-                    ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
-                )
-                binding.voiceButton.isEnabled = true
-                binding.progressBar.visibility = View.GONE
-                caliFragment?.hideAudioOverlay()
-            }
+            is WhisperTranscriber.State.Idle -> resetVoiceButton()
             is WhisperTranscriber.State.Recording -> {
                 binding.voiceButton.setColorFilter(
                     ContextCompat.getColor(requireContext(), R.color.primary_blue)
                 )
-                binding.voiceButton.isEnabled = true
-                caliFragment?.showAudioOverlay()
+                (parentFragment as? CaliFragment)?.showAudioOverlay()
             }
             is WhisperTranscriber.State.Transcribing -> {
                 binding.voiceButton.isEnabled = false
                 binding.progressBar.visibility = View.VISIBLE
-                caliFragment?.hideAudioOverlay()
+                (parentFragment as? CaliFragment)?.hideAudioOverlay()
             }
             is WhisperTranscriber.State.Result -> {
-                binding.progressBar.visibility = View.GONE
-                binding.voiceButton.isEnabled = true
-                binding.voiceButton.setColorFilter(
-                    ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
-                )
-                caliFragment?.hideAudioOverlay()
+                resetVoiceButton()
                 val current = binding.textInput.text?.toString() ?: ""
-                val separator = if (current.isNotEmpty()) " " else ""
-                val newText = current + separator + state.text
+                val newText = if (current.isEmpty()) state.text else "$current ${state.text}"
                 binding.textInput.setText(newText)
                 binding.textInput.setSelection(newText.length)
                 whisperTranscriber.resetState()
             }
             is WhisperTranscriber.State.Error -> {
-                binding.progressBar.visibility = View.GONE
-                binding.voiceButton.isEnabled = true
-                binding.voiceButton.setColorFilter(
-                    ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
-                )
-                caliFragment?.hideAudioOverlay()
+                resetVoiceButton()
                 Toast.makeText(context, state.message, Toast.LENGTH_SHORT).show()
                 whisperTranscriber.resetState()
             }
@@ -246,11 +234,14 @@ class AIInputFragment : Fragment() {
         }
 
         binding.inputLayout.error = null
+        binding.textInput.setText("")
         if (text.isNotEmpty()) {
-            binding.textInput.setText("")
             addMessage(ChatMessage(ChatRole.USER, text))
+        } else if (attachments.isNotEmpty()) {
+            val label = "${attachments.size} file${if (attachments.size > 1) "s" else ""} attached"
+            addMessage(ChatMessage(ChatRole.USER, "📎 $label"))
         }
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val userId = AuthRepository.getInstance().getCurrentUserId() ?: ""
 
             // Use streaming for text-only messages (new conversations or follow-ups without pending events)
@@ -270,7 +261,7 @@ class AIInputFragment : Fragment() {
 
                 // No spinner — dots in chat bubble serve as the indicator
                 setLoading(true, showSpinner = false)
-                addMessage(ChatMessage(ChatRole.ASSISTANT, "•  •  •"))
+                addMessage(ChatMessage(ChatRole.ASSISTANT, ChatMessageAdapter.TYPING_INDICATOR))
 
                 aiAssistant.processTextInputStreaming(text, userId).collect { update ->
                     when (update) {
@@ -295,20 +286,17 @@ class AIInputFragment : Fragment() {
                 return@launch
             }
 
-            // Non-streaming paths (attachments only, or text+attachments) — show spinner
-            setLoading(true)
+            // Non-streaming paths (attachments only, or text+attachments)
+            setLoading(true, showSpinner = false)
+            addMessage(ChatMessage(ChatRole.ASSISTANT, ChatMessageAdapter.TYPING_INDICATOR))
             val result = when {
                 text.isEmpty() && attachments.isNotEmpty() -> {
                     processAttachments(userId, null)
                 }
                 else -> {
+                    // Text + attachments: process attachments directly (text provides context in prompt)
                     val sessionId = currentSessionId ?: java.util.UUID.randomUUID().toString()
-                    val textResult = aiAssistant.processTextIntoSession(text, userId, sessionId)
-                    if (textResult.isFailure) {
-                        textResult
-                    } else {
-                        processAttachments(userId, sessionId)
-                    }
+                    processAttachments(userId, sessionId)
                 }
             }
 
@@ -316,16 +304,21 @@ class AIInputFragment : Fragment() {
 
             result.fold(
                 onSuccess = { output ->
-                    handleSuccess(output)
+                    val finalText = output.message?.takeIf { it.isNotBlank() }
+                        ?: getString(R.string.ai_review_ready)
+                    chatAdapter.replaceLast(ChatMessage(ChatRole.ASSISTANT, finalText))
+                    syncMessagesToViewModel()
+                    handleSuccess(output, skipMessage = true)
                 },
                 onFailure = { error ->
-                    addMessage(
+                    chatAdapter.replaceLast(
                         ChatMessage(
                             role = ChatRole.ASSISTANT,
                             text = error.message ?: getString(R.string.ai_error),
                             isError = true
                         )
                     )
+                    syncMessagesToViewModel()
                 }
             )
         }

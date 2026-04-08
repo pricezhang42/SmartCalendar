@@ -2,8 +2,6 @@ package com.example.smartcalendar.ui.ai
 
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.os.Handler
-import android.os.Looper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -16,6 +14,16 @@ import com.example.smartcalendar.databinding.ItemChatMessageBinding
 class ChatMessageAdapter(
     private val items: MutableList<ChatMessage>
 ) : RecyclerView.Adapter<ChatMessageAdapter.ViewHolder>() {
+
+    companion object {
+        const val TYPING_INDICATOR = "•  •  •"
+        private val TYPING_FRAMES = arrayOf("•", "•  •", "•  •  •")
+        private const val TYPING_DELAY_MS = 400L
+        private const val SIDE_MARGIN_DP = 48
+        private const val CORNER_RADIUS_DP = 18f
+        private val AI_BUBBLE_COLOR = Color.parseColor("#EDEDED")
+        private val AI_TEXT_COLOR = Color.parseColor("#1A1A1A")
+    }
 
     fun addMessage(message: ChatMessage) {
         items.add(message)
@@ -33,9 +41,7 @@ class ChatMessageAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemChatMessageBinding.inflate(
-            LayoutInflater.from(parent.context),
-            parent,
-            false
+            LayoutInflater.from(parent.context), parent, false
         )
         return ViewHolder(binding)
     }
@@ -44,22 +50,24 @@ class ChatMessageAdapter(
         holder.bind(items[position])
     }
 
-    override fun getItemCount(): Int = items.size
-
-    companion object {
-        const val TYPING_INDICATOR = "•  •  •"
-        private val TYPING_FRAMES = arrayOf("•", "•  •", "•  •  •")
+    override fun onViewRecycled(holder: ViewHolder) {
+        holder.stopTypingAnimation()
+        super.onViewRecycled(holder)
     }
+
+    override fun getItemCount(): Int = items.size
 
     inner class ViewHolder(
         private val binding: ItemChatMessageBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
-        private var typingHandler: Handler? = null
+        private val density = binding.root.resources.displayMetrics.density
+        private val sideMargin = (SIDE_MARGIN_DP * density).toInt()
+        private val cornerRadius = CORNER_RADIUS_DP * density
+
         private var typingRunnable: Runnable? = null
 
         fun bind(message: ChatMessage) {
-            // Stop any previous typing animation
             stopTypingAnimation()
 
             if (message.text == TYPING_INDICATOR) {
@@ -67,41 +75,25 @@ class ChatMessageAdapter(
             } else {
                 binding.messageText.text = message.text
             }
-            val density = binding.root.resources.displayMetrics.density
-            val sideMargin = (48 * density).toInt()
+
             val params = (binding.messageContainer.layoutParams as? FrameLayout.LayoutParams)
                 ?: FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
-
-            params.gravity = if (message.role == ChatRole.USER) Gravity.END else Gravity.START
-            params.marginStart = if (message.role == ChatRole.USER) sideMargin else 0
-            params.marginEnd = if (message.role == ChatRole.USER) 0 else sideMargin
+            val isUser = message.role == ChatRole.USER
+            params.gravity = if (isUser) Gravity.END else Gravity.START
+            params.marginStart = if (isUser) sideMargin else 0
+            params.marginEnd = if (isUser) 0 else sideMargin
             binding.messageContainer.layoutParams = params
 
             val background = binding.messageContainer.background as? GradientDrawable
-                ?: GradientDrawable().apply {
-                    cornerRadius = 18f * binding.root.resources.displayMetrics.density
-                }
+                ?: GradientDrawable().apply { this.cornerRadius = this@ViewHolder.cornerRadius }
 
-            val bubbleColor: Int
-            val textColor: Int
-
-            when {
-                message.isError -> {
-                    bubbleColor = ContextCompat.getColor(binding.root.context, R.color.ai_confidence_low)
-                    textColor = Color.WHITE
-                }
-                message.role == ChatRole.USER -> {
-                    bubbleColor = ContextCompat.getColor(binding.root.context, R.color.primary_blue)
-                    textColor = Color.WHITE
-                }
-                else -> {
-                    // AI messages: light gray bubble with dark text (matches Figma)
-                    bubbleColor = Color.parseColor("#EDEDED")
-                    textColor = Color.parseColor("#1A1A1A")
-                }
+            val (bubbleColor, textColor) = when {
+                message.isError -> ContextCompat.getColor(binding.root.context, R.color.ai_confidence_low) to Color.WHITE
+                isUser -> ContextCompat.getColor(binding.root.context, R.color.primary_blue) to Color.WHITE
+                else -> AI_BUBBLE_COLOR to AI_TEXT_COLOR
             }
 
             background.setColor(bubbleColor)
@@ -111,20 +103,19 @@ class ChatMessageAdapter(
 
         private fun startTypingAnimation() {
             var frame = 0
-            typingHandler = Handler(Looper.getMainLooper())
             typingRunnable = object : Runnable {
                 override fun run() {
+                    if (!binding.root.isAttachedToWindow) return
                     binding.messageText.text = TYPING_FRAMES[frame % TYPING_FRAMES.size]
                     frame++
-                    typingHandler?.postDelayed(this, 400)
+                    binding.root.postDelayed(this, TYPING_DELAY_MS)
                 }
             }
             typingRunnable?.run()
         }
 
-        private fun stopTypingAnimation() {
-            typingRunnable?.let { typingHandler?.removeCallbacks(it) }
-            typingHandler = null
+        fun stopTypingAnimation() {
+            typingRunnable?.let { binding.root.removeCallbacks(it) }
             typingRunnable = null
         }
     }

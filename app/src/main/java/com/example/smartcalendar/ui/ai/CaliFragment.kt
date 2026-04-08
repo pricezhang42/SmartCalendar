@@ -46,48 +46,38 @@ class CaliFragment : Fragment() {
         }
     }
 
+    private fun wireInputCallbacks(fragment: AIInputFragment) {
+        fragment.onSessionCreated = { sessionId ->
+            viewModel.currentSessionId = sessionId
+            ensurePreviewFragment(sessionId)
+        }
+        fragment.onReviewRequested = { sessionId ->
+            viewModel.currentSessionId = sessionId
+            viewModel.isInPreviewMode = true
+            showPreviewFragment(sessionId)
+        }
+        fragment.onClose = {
+            activity?.onBackPressedDispatcher?.onBackPressed()
+        }
+    }
+
+    private fun wirePreviewCallbacks(fragment: AIPreviewFragment) {
+        fragment.onEventClick = { event -> showEventEditModal(event) }
+        fragment.onComplete = { onAssistantComplete() }
+        fragment.onBack = {
+            viewModel.isInPreviewMode = false
+            showInputFragment()
+        }
+    }
+
     private fun wireCallbacks() {
-        inputFragment?.apply {
-            onSessionCreated = { sessionId ->
-                viewModel.currentSessionId = sessionId
-                ensurePreviewFragment(sessionId)
-            }
-            onReviewRequested = { sessionId ->
-                viewModel.currentSessionId = sessionId
-                viewModel.isInPreviewMode = true
-                showPreviewFragment(sessionId)
-            }
-            onClose = {
-                // In tab mode, just go back to calendar
-                activity?.onBackPressedDispatcher?.onBackPressed()
-            }
-        }
-        previewFragment?.apply {
-            onEventClick = { event -> showEventEditModal(event) }
-            onComplete = { onAssistantComplete() }
-            onBack = {
-                viewModel.isInPreviewMode = false
-                showInputFragment()
-            }
-        }
+        inputFragment?.let { wireInputCallbacks(it) }
+        previewFragment?.let { wirePreviewCallbacks(it) }
     }
 
     private fun showInputFragment() {
         if (inputFragment == null) {
-            inputFragment = AIInputFragment().apply {
-                onSessionCreated = { sessionId ->
-                    viewModel.currentSessionId = sessionId
-                    ensurePreviewFragment(sessionId)
-                }
-                onReviewRequested = { sessionId ->
-                    viewModel.currentSessionId = sessionId
-                    viewModel.isInPreviewMode = true
-                    showPreviewFragment(sessionId)
-                }
-                onClose = {
-                    activity?.onBackPressedDispatcher?.onBackPressed()
-                }
-            }
+            inputFragment = AIInputFragment().also { wireInputCallbacks(it) }
             childFragmentManager.beginTransaction()
                 .add(R.id.caliFragmentContainer, inputFragment!!, TAG_INPUT)
                 .commit()
@@ -101,25 +91,17 @@ class CaliFragment : Fragment() {
 
     private fun ensurePreviewFragment(sessionId: String) {
         if (previewFragment == null) {
-            previewFragment = AIPreviewFragment.newInstance(sessionId).apply {
-                onEventClick = { event -> showEventEditModal(event) }
-                onComplete = { onAssistantComplete() }
-                onBack = {
-                    viewModel.isInPreviewMode = false
-                    showInputFragment()
-                }
-            }
+            previewFragment = AIPreviewFragment.newInstance(sessionId).also { wirePreviewCallbacks(it) }
             childFragmentManager.beginTransaction()
                 .add(R.id.caliFragmentContainer, previewFragment!!, TAG_PREVIEW)
                 .hide(previewFragment!!)
                 .commit()
-        } else {
-            previewFragment?.updateSession(sessionId)
         }
     }
 
     private fun showPreviewFragment(sessionId: String) {
         ensurePreviewFragment(sessionId)
+        previewFragment?.updateSession(sessionId)
         val transaction = childFragmentManager.beginTransaction()
         inputFragment?.let { transaction.hide(it) }
         previewFragment?.let { transaction.show(it) }
