@@ -186,4 +186,6 @@
     <string name="voice_error_recording">Failed to start recording</string>
     <string name="voice_error_transcription">Transcription failed</string>
     <string name="voice_model_downloading">Downloading speech model…</string>
+    <string name="voice_listening_label">Listening…</string>
+    <string name="voice_release_hint">Release to send</string>
 </resources>

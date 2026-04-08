@@ -29,11 +29,7 @@ class GeminiProvider : AIService {
     companion object {
         private const val TAG = "GeminiProvider"
         private val MODEL_CANDIDATES = listOf(
-            "gemini-2.5-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-001",
-            "gemini-1.0-pro"
+            "gemini-2.5-flash"
         )
     }
 
@@ -105,7 +101,19 @@ class GeminiProvider : AIService {
                 Log.d(TAG, "Streaming complete: $fullText")
                 emit(StreamChunk.Complete(parseGeminiResponse(fullText)))
             } else {
-                emit(StreamChunk.Complete(ProcessingResult.Error("Empty response from Gemini")))
+                // Streaming returned empty/whitespace — fall back to non-streaming
+                Log.d(TAG, "Streaming empty, falling back to non-streaming")
+                emit(StreamChunk.Partial("Searching..."))
+                val fallbackResult = generateContent(prompt)
+                fallbackResult.fold(
+                    onSuccess = { responseText ->
+                        Log.d(TAG, "Fallback response: $responseText")
+                        emit(StreamChunk.Complete(parseGeminiResponse(responseText)))
+                    },
+                    onFailure = { error ->
+                        emit(StreamChunk.Complete(ProcessingResult.Error("Failed to process: ${error.message}", error as? Exception)))
+                    }
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "Streaming error", e)
@@ -132,20 +140,20 @@ class GeminiProvider : AIService {
         )
         val requestBody = json.encodeToString(GeminiGenerateRequest.serializer(), request)
 
-        var lastError: Exception? = null
-        for (modelName in MODEL_CANDIDATES) {
-            try {
-                val accumulated = StringBuilder()
+        // Use primary model only for streaming — fallback handled by non-streaming path
+        val modelName = MODEL_CANDIDATES.first()
+        try {
+            val accumulated = StringBuilder()
 
-                httpClient.preparePost(
-                    "https://generativelanguage.googleapis.com/v1beta/models/$modelName:streamGenerateContent"
+            httpClient.preparePost(
+                "https://generativelanguage.googleapis.com/v1beta/models/$modelName:streamGenerateContent"
                 ) {
                     url { parameters.append("key", BuildConfig.GEMINI_API_KEY); parameters.append("alt", "sse") }
                     contentType(ContentType.Application.Json)
                     setBody(requestBody)
                 }.execute { response ->
                     if (!response.status.isSuccess()) {
-                        lastError = Exception("Gemini API error: ${response.status}")
+                        Log.w(TAG, "Streaming $modelName failed: ${response.status}")
                         return@execute
                     }
 
@@ -157,28 +165,28 @@ class GeminiProvider : AIService {
                         if (jsonData == "[DONE]" || jsonData.isEmpty()) continue
 
                         try {
+                            Log.d(TAG, "SSE raw chunk: ${jsonData.take(500)}")
                             val parsed = json.decodeFromString(GeminiGenerateResponse.serializer(), jsonData)
                             val chunkText = parsed.candidates
                                 .firstOrNull()?.content?.parts?.firstOrNull()?.text
-                            if (!chunkText.isNullOrEmpty()) {
+                            if (!chunkText.isNullOrBlank()) {
                                 accumulated.append(chunkText)
                                 emit(accumulated.toString())
+                            } else {
+                                Log.d(TAG, "SSE chunk had no text, candidates count: ${parsed.candidates.size}")
                             }
                         } catch (e: Exception) {
-                            Log.w(TAG, "Failed to parse SSE chunk: $jsonData", e)
+                            Log.w(TAG, "Failed to parse SSE chunk: ${jsonData.take(500)}", e)
                         }
                     }
                 }
 
-                if (accumulated.isNotEmpty()) return@flow
-                lastError = lastError ?: Exception("Empty streaming response")
-            } catch (e: Exception) {
-                lastError = e
-                Log.w(TAG, "Model $modelName streaming failed: ${e.message}")
-            }
+            if (accumulated.isNotEmpty()) return@flow
+            // Streaming returned nothing — the fallback in streamParseText handles this
+        } catch (e: Exception) {
+            Log.w(TAG, "Streaming $modelName failed: ${e.message}")
+            // Don't throw — let streamParseText fallback to non-streaming
         }
-
-        throw lastError ?: Exception("Failed to stream from Gemini API")
     }
 
     override suspend fun parseImage(
@@ -512,6 +520,7 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
     }
 
     private fun parseGeminiResponse(responseText: String): ProcessingResult {
+        Log.d(TAG, "parseGeminiResponse input (${responseText.length} chars): ${responseText.take(800)}")
         return try {
             // Clean response - remove markdown code blocks if present
             val cleanedResponse = responseText
@@ -627,10 +636,13 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
                     ?.text
                     ?.trim()
 
-                if (!text.isNullOrEmpty()) {
+                if (!text.isNullOrBlank()) {
                     return Result.success(text)
                 }
-                lastError = Exception("Empty response from Gemini")
+
+                // Gemini searched but returned no text content — return a helpful message
+                Log.w(TAG, "Model $modelName returned empty text. Full response: ${responseBody.take(500)}")
+                return Result.success("""{"message": "I searched but couldn't find specific details for your request. Could you try rephrasing or being more specific?", "events": []}""")
             }
 
             Result.failure(lastError ?: Exception("Failed to call Gemini API"))

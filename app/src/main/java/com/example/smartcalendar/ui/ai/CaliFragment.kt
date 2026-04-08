@@ -164,4 +164,27 @@ class CaliFragment : Fragment() {
         }
         return false
     }
+
+    // --- Audio Wave Overlay ---
+
+    private var audioOverlay: AudioWaveOverlay? = null
+
+    fun showAudioOverlay() {
+        if (audioOverlay != null) return
+        val overlay = AudioWaveOverlay(requireContext())
+        overlay.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        (view as? ViewGroup)?.addView(overlay)
+        overlay.show()
+        audioOverlay = overlay
+    }
+
+    fun hideAudioOverlay() {
+        audioOverlay?.hide {
+            (view as? ViewGroup)?.removeView(audioOverlay)
+            audioOverlay = null
+        }
+    }
 }

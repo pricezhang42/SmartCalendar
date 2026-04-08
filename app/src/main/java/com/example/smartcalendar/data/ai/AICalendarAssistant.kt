@@ -338,7 +338,13 @@ class AICalendarAssistant private constructor(
         return when (result) {
             is ProcessingResult.Success -> {
                 if (result.response.events.isEmpty()) {
-                    return Result.failure(Exception("No events found in the input"))
+                    val message = result.response.message?.takeIf { it.isNotBlank() }
+                        ?: "I couldn't find any events for your request. Try being more specific or rephrase your query."
+                    return Result.success(AIProcessingOutput(
+                        sessionId = sessionIdOverride ?: UUID.randomUUID().toString(),
+                        message = message,
+                        rawResponse = result.response.rawResponse
+                    ))
                 }
 
                 val sessionId = sessionIdOverride ?: UUID.randomUUID().toString()

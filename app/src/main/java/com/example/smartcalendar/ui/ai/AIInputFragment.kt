@@ -110,6 +110,8 @@ class AIInputFragment : Fragment() {
     }
 
     private fun handleVoiceState(state: WhisperTranscriber.State) {
+        val caliFragment = parentFragment as? CaliFragment
+
         when (state) {
             is WhisperTranscriber.State.Idle -> {
                 binding.voiceButton.setColorFilter(
@@ -117,16 +119,19 @@ class AIInputFragment : Fragment() {
                 )
                 binding.voiceButton.isEnabled = true
                 binding.progressBar.visibility = View.GONE
+                caliFragment?.hideAudioOverlay()
             }
             is WhisperTranscriber.State.Recording -> {
                 binding.voiceButton.setColorFilter(
                     ContextCompat.getColor(requireContext(), R.color.primary_blue)
                 )
                 binding.voiceButton.isEnabled = true
+                caliFragment?.showAudioOverlay()
             }
             is WhisperTranscriber.State.Transcribing -> {
                 binding.voiceButton.isEnabled = false
                 binding.progressBar.visibility = View.VISIBLE
+                caliFragment?.hideAudioOverlay()
             }
             is WhisperTranscriber.State.Result -> {
                 binding.progressBar.visibility = View.GONE
@@ -134,12 +139,12 @@ class AIInputFragment : Fragment() {
                 binding.voiceButton.setColorFilter(
                     ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
                 )
+                caliFragment?.hideAudioOverlay()
                 val current = binding.textInput.text?.toString() ?: ""
                 val separator = if (current.isNotEmpty()) " " else ""
                 val newText = current + separator + state.text
                 binding.textInput.setText(newText)
                 binding.textInput.setSelection(newText.length)
-                // Reset to Idle so this state doesn't replay on lifecycle restart
                 whisperTranscriber.resetState()
             }
             is WhisperTranscriber.State.Error -> {
@@ -148,8 +153,8 @@ class AIInputFragment : Fragment() {
                 binding.voiceButton.setColorFilter(
                     ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
                 )
+                caliFragment?.hideAudioOverlay()
                 Toast.makeText(context, state.message, Toast.LENGTH_SHORT).show()
-                // Reset to Idle so this error doesn't replay on lifecycle restart
                 whisperTranscriber.resetState()
             }
         }
@@ -248,10 +253,21 @@ class AIInputFragment : Fragment() {
         lifecycleScope.launch {
             val userId = AuthRepository.getInstance().getCurrentUserId() ?: ""
 
-            // Use streaming for text-only new conversations
-            val useStreaming = text.isNotEmpty() && attachments.isEmpty() && currentSessionId == null
+            // Use streaming for text-only messages (new conversations or follow-ups without pending events)
+            val useStreaming = text.isNotEmpty() && attachments.isEmpty()
 
             if (useStreaming) {
+                // If session has pending events, try refinement first (non-streaming)
+                if (currentSessionId != null) {
+                    val refineResult = aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
+                    if (refineResult.isSuccess) {
+                        setLoading(false)
+                        handleSuccess(refineResult.getOrThrow())
+                        return@launch
+                    }
+                    // Refinement failed (no pending events) — fall through to streaming
+                }
+
                 // No spinner — dots in chat bubble serve as the indicator
                 setLoading(true, showSpinner = false)
                 addMessage(ChatMessage(ChatRole.ASSISTANT, "•  •  •"))
@@ -279,19 +295,9 @@ class AIInputFragment : Fragment() {
                 return@launch
             }
 
-            // Non-streaming paths — show spinner
+            // Non-streaming paths (attachments only, or text+attachments) — show spinner
             setLoading(true)
             val result = when {
-                text.isNotEmpty() && attachments.isEmpty() -> {
-                    // Has session → try refinement, fall back to new creation if no pending events
-                    val refineResult = aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
-                    if (refineResult.isFailure && refineResult.exceptionOrNull()?.message?.contains("No pending events") == true) {
-                        // No events to refine — treat as new input
-                        aiAssistant.processTextIntoSession(text, userId, currentSessionId!!)
-                    } else {
-                        refineResult
-                    }
-                }
                 text.isEmpty() && attachments.isNotEmpty() -> {
                     processAttachments(userId, null)
                 }
