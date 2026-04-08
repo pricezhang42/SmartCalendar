@@ -650,21 +650,8 @@ class AICalendarAssistant private constructor(
     }
 
     private fun shouldIncludeCalendarContext(text: String): Boolean {
-        val lower = text.lowercase()
-        val keywords = listOf(
-            "postpone",
-            "delay",
-            "move",
-            "reschedule",
-            "shift",
-            "update",
-            "change",
-            "edit",
-            "cancel",
-            "delete",
-            "remove"
-        )
-        return keywords.any { lower.contains(it) }
+        // Always include calendar context so Gemini can reference existing events
+        return true
     }
 
     private suspend fun buildCalendarContext(

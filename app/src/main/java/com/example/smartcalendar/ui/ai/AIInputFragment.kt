@@ -24,7 +24,6 @@ import com.example.smartcalendar.R
 import com.example.smartcalendar.data.ai.AICalendarAssistant
 import com.example.smartcalendar.data.ai.WhisperTranscriber
 import com.example.smartcalendar.data.ai.AIProcessingOutput
-import com.example.smartcalendar.data.ai.StreamUpdate
 import com.example.smartcalendar.data.repository.AuthRepository
 import com.example.smartcalendar.databinding.FragmentAiInputBinding
 import kotlinx.coroutines.launch
@@ -244,57 +243,25 @@ class AIInputFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val userId = AuthRepository.getInstance().getCurrentUserId() ?: ""
 
-            // Use streaming for text-only messages (new conversations or follow-ups without pending events)
-            val useStreaming = text.isNotEmpty() && attachments.isEmpty()
-
-            if (useStreaming) {
-                // If session has pending events, try refinement first (non-streaming)
-                if (currentSessionId != null) {
-                    val refineResult = aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
-                    if (refineResult.isSuccess) {
-                        setLoading(false)
-                        handleSuccess(refineResult.getOrThrow())
-                        return@launch
-                    }
-                    // Refinement failed (no pending events) — fall through to streaming
-                }
-
-                // No spinner — dots in chat bubble serve as the indicator
-                setLoading(true, showSpinner = false)
-                addMessage(ChatMessage(ChatRole.ASSISTANT, ChatMessageAdapter.TYPING_INDICATOR))
-
-                aiAssistant.processTextInputStreaming(text, userId).collect { update ->
-                    when (update) {
-                        is StreamUpdate.TextUpdate -> {
-                            // Keep showing dots while streaming (don't show partial text)
-                        }
-                        is StreamUpdate.Done -> {
-                            setLoading(false)
-                            val finalText = update.output.message?.takeIf { it.isNotBlank() }
-                                ?: getString(R.string.ai_review_ready)
-                            chatAdapter.replaceLast(ChatMessage(ChatRole.ASSISTANT, finalText))
-                            syncMessagesToViewModel()
-                            handleSuccess(update.output, skipMessage = true)
-                        }
-                        is StreamUpdate.Error -> {
-                            setLoading(false)
-                            chatAdapter.replaceLast(ChatMessage(ChatRole.ASSISTANT, update.message, isError = true))
-                            syncMessagesToViewModel()
-                        }
-                    }
-                }
-                return@launch
-            }
-
-            // Non-streaming paths (attachments only, or text+attachments)
+            // Show typing dots while processing
             setLoading(true, showSpinner = false)
             addMessage(ChatMessage(ChatRole.ASSISTANT, ChatMessageAdapter.TYPING_INDICATOR))
+
             val result = when {
+                text.isNotEmpty() && attachments.isEmpty() -> {
+                    // Text only: try refinement if session has events, otherwise new input
+                    if (currentSessionId != null) {
+                        val refineResult = aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
+                        if (refineResult.isSuccess) refineResult
+                        else aiAssistant.processTextInput(text, userId)
+                    } else {
+                        aiAssistant.processTextInput(text, userId)
+                    }
+                }
                 text.isEmpty() && attachments.isNotEmpty() -> {
                     processAttachments(userId, null)
                 }
                 else -> {
-                    // Text + attachments: process attachments directly (text provides context in prompt)
                     val sessionId = currentSessionId ?: java.util.UUID.randomUUID().toString()
                     processAttachments(userId, sessionId)
                 }

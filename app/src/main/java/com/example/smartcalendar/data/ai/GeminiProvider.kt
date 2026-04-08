@@ -6,15 +6,11 @@ import com.example.smartcalendar.BuildConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.request.post
-import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
-import io.ktor.client.request.url
-import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
@@ -28,7 +24,7 @@ class GeminiProvider : AIService {
 
     companion object {
         private const val TAG = "GeminiProvider"
-        private const val MODEL = "gemini-2.5-flash"
+        private const val MODEL = "gemini-2.5-flash-lite"
         private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
     }
 
@@ -82,68 +78,9 @@ class GeminiProvider : AIService {
         timezone: String,
         calendarContext: List<CalendarContextEvent>?
     ): Flow<StreamChunk> = flow {
-        if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
-            emit(StreamChunk.Complete(ProcessingResult.Error("Gemini API key not configured")))
-            return@flow
-        }
-
-        val prompt = buildTextParsingPrompt(text, currentDate, timezone, calendarContext)
-
-        try {
-            // Try streaming first — collect accumulated text
-            var fullText = ""
-            streamGenerateContent(prompt).collect { fullText = it }
-
-            // If streaming returned empty (common with google_search), fall back to non-streaming
-            if (fullText.isBlank()) {
-                fullText = generateContent(prompt).getOrElse {
-                    emit(StreamChunk.Complete(ProcessingResult.Error("Failed to process: ${it.message}", it as? Exception)))
-                    return@flow
-                }
-            }
-
-            emit(StreamChunk.Complete(parseGeminiResponse(fullText)))
-        } catch (e: Exception) {
-            Log.e(TAG, "Streaming error", e)
-            emit(StreamChunk.Complete(ProcessingResult.Error("Failed to process: ${e.message}", e)))
-        }
-    }
-
-    /**
-     * Stream Gemini response via SSE. Returns accumulated text chunks.
-     * If streaming returns empty (common with google_search), the caller falls back to non-streaming.
-     */
-    private fun streamGenerateContent(prompt: String): Flow<String> = flow {
-        try {
-            val body = buildRequestBody(prompt)
-            val accumulated = StringBuilder()
-
-            httpClient.preparePost("$BASE_URL/$MODEL:streamGenerateContent") {
-                url { parameters.append("key", BuildConfig.GEMINI_API_KEY); parameters.append("alt", "sse") }
-                contentType(ContentType.Application.Json)
-                setBody(body)
-            }.execute { response ->
-                if (!response.status.isSuccess()) return@execute
-
-                val channel = response.bodyAsChannel()
-                while (!channel.isClosedForRead) {
-                    val line = channel.readUTF8Line() ?: break
-                    if (!line.startsWith("data: ")) continue
-                    val jsonData = line.removePrefix("data: ").trim()
-                    if (jsonData == "[DONE]" || jsonData.isEmpty()) continue
-
-                    try {
-                        val text = extractResponseText(jsonData)
-                        if (text != null) {
-                            accumulated.append(text)
-                            emit(accumulated.toString())
-                        }
-                    } catch (_: Exception) { }
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Streaming failed: ${e.message}")
-        }
+        // No streaming — just call non-streaming and emit the result
+        val result = parseText(text, currentDate, timezone, calendarContext)
+        emit(StreamChunk.Complete(result))
     }
 
     override suspend fun parseImage(
@@ -238,7 +175,7 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
   ]
 }
 
-If no events found, return: {"events": []}
+If no events found, return: {"message": "Summary and any follow-up question", "events": []}
 """.trimIndent()
     }
 
@@ -307,7 +244,7 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
   ]
 }
 
-If no events found, return: {"events": []}
+If no events found, return: {"message": "Summary and any follow-up question", "events": []}
 """.trimIndent()
     }
 
@@ -376,7 +313,7 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
   ]
 }
 
-If no events found, return: {"events": []}
+If no events found, return: {"message": "Summary and any follow-up question", "events": []}
 """.trimIndent()
     }
     private fun buildRefinementPrompt(events: List<ExtractedEvent>, instruction: String): String {
@@ -520,8 +457,6 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
             ?.takeIf { it.isNotBlank() }
     }
 
-    private val EMPTY_SEARCH_RESPONSE = """{"message": "I searched but couldn't find specific details for your request. Could you try rephrasing or being more specific?", "events": []}"""
-
     private suspend fun generateContent(
         prompt: String,
         attachmentMimeType: String? = null,
@@ -537,11 +472,10 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
             val responseBody = response.bodyAsText()
 
             if (!response.status.isSuccess()) {
-                return Result.failure(Exception("Gemini API error: ${response.status} $responseBody"))
+                return Result.failure(Exception("Gemini API error: ${response.status}"))
             }
 
-            val text = extractResponseText(responseBody)
-            Result.success(text ?: EMPTY_SEARCH_RESPONSE)
+            Result.success(extractResponseText(responseBody) ?: """{"events": []}""")
         } catch (e: Exception) {
             Result.failure(e)
         }
