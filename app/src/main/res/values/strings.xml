@@ -177,4 +177,13 @@
     <string name="ai_events_approved">%d events added to calendar</string>
     <string name="ai_changed_field">AI suggested</string>
     <string name="ai_api_key_missing">Gemini API key not configured</string>
+
+    <!-- Voice Input -->
+    <string name="voice_button_desc">Voice input</string>
+    <string name="voice_recording">Recording… Tap to stop</string>
+    <string name="voice_transcribing">Transcribing…</string>
+    <string name="voice_error_permission">Microphone permission is required for voice input</string>
+    <string name="voice_error_recording">Failed to start recording</string>
+    <string name="voice_error_transcription">Transcription failed</string>
+    <string name="voice_model_downloading">Downloading speech model…</string>
 </resources>

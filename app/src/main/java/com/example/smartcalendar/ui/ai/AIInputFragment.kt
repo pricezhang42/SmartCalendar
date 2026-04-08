@@ -1,5 +1,7 @@
 package com.example.smartcalendar.ui.ai
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -8,14 +10,19 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.TextView
+import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.smartcalendar.BuildConfig
 import com.example.smartcalendar.R
 import com.example.smartcalendar.data.ai.AICalendarAssistant
+import com.example.smartcalendar.data.ai.WhisperTranscriber
 import com.example.smartcalendar.data.ai.AIProcessingOutput
 import com.example.smartcalendar.data.repository.AuthRepository
 import com.example.smartcalendar.databinding.FragmentAiInputBinding
@@ -45,6 +52,19 @@ class AIInputFragment : Fragment() {
         }
     }
 
+    // Voice input via on-device Whisper
+    private lateinit var whisperTranscriber: WhisperTranscriber
+
+    private val micPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            whisperTranscriber.startRecording()
+        } else {
+            Toast.makeText(requireContext(), R.string.voice_error_permission, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     var onSessionCreated: ((String) -> Unit)? = null
     var onReviewRequested: ((String) -> Unit)? = null
     var onClose: (() -> Unit)? = null
@@ -71,8 +91,67 @@ class AIInputFragment : Fragment() {
 
         setupChat()
         setupListeners()
+        setupVoiceInput()
         binding.reviewButton.isEnabled = !currentSessionId.isNullOrBlank()
         checkApiKey()
+    }
+
+    private fun setupVoiceInput() {
+        whisperTranscriber = WhisperTranscriber(requireContext())
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                whisperTranscriber.state.collect { state ->
+                    handleVoiceState(state)
+                }
+            }
+        }
+    }
+
+    private fun handleVoiceState(state: WhisperTranscriber.State) {
+        when (state) {
+            is WhisperTranscriber.State.Idle -> {
+                binding.voiceButton.setColorFilter(
+                    ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
+                )
+                binding.voiceButton.isEnabled = true
+                binding.progressBar.visibility = View.GONE
+            }
+            is WhisperTranscriber.State.Recording -> {
+                binding.voiceButton.setColorFilter(
+                    ContextCompat.getColor(requireContext(), R.color.primary_blue)
+                )
+                binding.voiceButton.isEnabled = true
+            }
+            is WhisperTranscriber.State.Transcribing -> {
+                binding.voiceButton.isEnabled = false
+                binding.progressBar.visibility = View.VISIBLE
+            }
+            is WhisperTranscriber.State.Result -> {
+                binding.progressBar.visibility = View.GONE
+                binding.voiceButton.isEnabled = true
+                binding.voiceButton.setColorFilter(
+                    ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
+                )
+                val current = binding.textInput.text?.toString() ?: ""
+                val separator = if (current.isNotEmpty()) " " else ""
+                val newText = current + separator + state.text
+                binding.textInput.setText(newText)
+                binding.textInput.setSelection(newText.length)
+                // Reset to Idle so this state doesn't replay on lifecycle restart
+                whisperTranscriber.resetState()
+            }
+            is WhisperTranscriber.State.Error -> {
+                binding.progressBar.visibility = View.GONE
+                binding.voiceButton.isEnabled = true
+                binding.voiceButton.setColorFilter(
+                    ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
+                )
+                Toast.makeText(context, state.message, Toast.LENGTH_SHORT).show()
+                // Reset to Idle so this error doesn't replay on lifecycle restart
+                whisperTranscriber.resetState()
+            }
+        }
     }
 
     private fun checkApiKey() {
@@ -109,6 +188,30 @@ class AIInputFragment : Fragment() {
 
         binding.processButton.setOnClickListener {
             processInput()
+        }
+
+        binding.voiceButton.setOnTouchListener { _, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO)
+                        == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        whisperTranscriber.startRecording()
+                    } else {
+                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (whisperTranscriber.isRecording()) {
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            whisperTranscriber.stopAndTranscribe()
+                        }
+                    }
+                    true
+                }
+                else -> false
+            }
         }
     }
 
@@ -271,6 +374,7 @@ class AIInputFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        whisperTranscriber.release()
         super.onDestroyView()
         _binding = null
     }
