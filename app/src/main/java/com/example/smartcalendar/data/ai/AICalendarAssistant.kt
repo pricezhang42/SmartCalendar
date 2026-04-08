@@ -40,6 +40,13 @@ class AICalendarAssistant private constructor(
         }
     }
 
+    init {
+        // Wire up function executor for Gemini function calling
+        (aiService as? GeminiProvider)?.functionExecutor = { name, args ->
+            executeCalendarFunction(name, args)
+        }
+    }
+
     private val database = AppDatabase.getInstance(context)
     private val pendingEventDao = database.pendingEventDao()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -55,7 +62,11 @@ class AICalendarAssistant private constructor(
      * @param userId Current user ID
      * @return Session ID for the created pending events, or error message
      */
-    suspend fun processTextInput(text: String, userId: String): Result<AIProcessingOutput> = withContext(Dispatchers.IO) {
+    suspend fun processTextInput(
+        text: String,
+        userId: String,
+        conversationHistory: List<Pair<String, String>>? = null
+    ): Result<AIProcessingOutput> = withContext(Dispatchers.IO) {
         Log.d(TAG, "Processing text input: $text")
 
         val currentDate = dateFormat.format(Date())
@@ -63,13 +74,7 @@ class AICalendarAssistant private constructor(
         val calendarRepository = LocalCalendarRepository.getInstance(context)
         calendarRepository.setUserId(userId)
 
-        val calendarContext = if (shouldIncludeCalendarContext(text)) {
-            buildCalendarContext(calendarRepository)
-        } else {
-            null
-        }
-
-        val result = aiService.parseText(text, currentDate, timezone, calendarContext)
+        val result = aiService.parseText(text, currentDate, timezone, null, conversationHistory)
         handleProcessingResult(
             result = result,
             calendarRepository = calendarRepository,
@@ -91,11 +96,7 @@ class AICalendarAssistant private constructor(
         val calendarRepository = LocalCalendarRepository.getInstance(context)
         calendarRepository.setUserId(userId)
 
-        val calendarContext = if (shouldIncludeCalendarContext(text)) {
-            buildCalendarContext(calendarRepository)
-        } else {
-            null
-        }
+        val calendarContext: List<CalendarContextEvent>? = null // Handled via function calling
 
         aiService.streamParseText(text, currentDate, timezone, calendarContext).collect { chunk ->
             when (chunk) {
@@ -133,11 +134,7 @@ class AICalendarAssistant private constructor(
         val calendarRepository = LocalCalendarRepository.getInstance(context)
         calendarRepository.setUserId(userId)
 
-        val calendarContext = if (shouldIncludeCalendarContext(text)) {
-            buildCalendarContext(calendarRepository)
-        } else {
-            null
-        }
+        val calendarContext: List<CalendarContextEvent>? = null // Handled via function calling
 
         val result = aiService.parseText(text, currentDate, timezone, calendarContext)
         handleProcessingResult(
@@ -162,7 +159,7 @@ class AICalendarAssistant private constructor(
         val timezone = TimeZone.getDefault().id
         val calendarRepository = LocalCalendarRepository.getInstance(context)
         calendarRepository.setUserId(userId)
-        val calendarContext = buildCalendarContext(calendarRepository)
+        val calendarContext: List<CalendarContextEvent>? = null // Handled via function calling
 
         val result = aiService.parseImage(imageBytes, mimeType, currentDate, timezone, calendarContext)
         handleProcessingResult(
@@ -187,7 +184,7 @@ class AICalendarAssistant private constructor(
         val timezone = TimeZone.getDefault().id
         val calendarRepository = LocalCalendarRepository.getInstance(context)
         calendarRepository.setUserId(userId)
-        val calendarContext = buildCalendarContext(calendarRepository)
+        val calendarContext: List<CalendarContextEvent>? = null // Handled via function calling
 
         val result = aiService.parseImage(imageBytes, mimeType, currentDate, timezone, calendarContext)
         handleProcessingResult(
@@ -212,7 +209,7 @@ class AICalendarAssistant private constructor(
         val timezone = TimeZone.getDefault().id
         val calendarRepository = LocalCalendarRepository.getInstance(context)
         calendarRepository.setUserId(userId)
-        val calendarContext = buildCalendarContext(calendarRepository)
+        val calendarContext: List<CalendarContextEvent>? = null // Handled via function calling
 
         val result = aiService.parseDocument(documentBytes, mimeType, currentDate, timezone, calendarContext)
         handleProcessingResult(
@@ -237,7 +234,7 @@ class AICalendarAssistant private constructor(
         val timezone = TimeZone.getDefault().id
         val calendarRepository = LocalCalendarRepository.getInstance(context)
         calendarRepository.setUserId(userId)
-        val calendarContext = buildCalendarContext(calendarRepository)
+        val calendarContext: List<CalendarContextEvent>? = null // Handled via function calling
 
         val result = aiService.parseDocument(documentBytes, mimeType, currentDate, timezone, calendarContext)
         handleProcessingResult(
@@ -679,6 +676,53 @@ class AICalendarAssistant private constructor(
                     calendarName = calendars[event.calendarId]?.name
                 )
             }
+    }
+
+    /**
+     * Execute a calendar function called by Gemini. Returns JSON result string.
+     */
+    private fun executeCalendarFunction(name: String, args: Map<String, String>): String {
+        val repository = LocalCalendarRepository.getInstance(context)
+        return try {
+            when (name) {
+                "search_events" -> {
+                    val query = args["query"] ?: ""
+                    val events = kotlinx.coroutines.runBlocking { repository.getAllEvents() }
+                    val matches = events.filter {
+                        it.summary.contains(query, ignoreCase = true) ||
+                        it.description.contains(query, ignoreCase = true)
+                    }
+                    val results = matches.map { eventToContextJson(it) }
+                    """{"events": [${results.joinToString(",")}]}"""
+                }
+                "get_events_by_date" -> {
+                    val startDate = args["start_date"] ?: ""
+                    val endDate = args["end_date"] ?: ""
+                    val start = dateFormat.parse(startDate)?.time ?: 0L
+                    val end = (dateFormat.parse(endDate)?.time ?: 0L) + 24 * 60 * 60 * 1000L // end of day
+                    val events = kotlinx.coroutines.runBlocking { repository.getAllEvents() }
+                    val matches = events.filter { it.dtStart in start..end }
+                    val results = matches.map { eventToContextJson(it) }
+                    """{"events": [${results.joinToString(",")}]}"""
+                }
+                "get_event_details" -> {
+                    val eventId = args["event_id"] ?: ""
+                    val event = kotlinx.coroutines.runBlocking { repository.getEvent(eventId) }
+                    if (event != null) eventToContextJson(event) else """{"error": "Event not found"}"""
+                }
+                else -> """{"error": "Unknown function: $name"}"""
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Function execution error: $name", e)
+            """{"error": "${e.message}"}"""
+        }
+    }
+
+    private fun eventToContextJson(event: ICalEvent): String {
+        val date = dateFormat.format(Date(event.dtStart))
+        val startTime = if (event.allDay) "null" else "\"${timeFormat.format(Date(event.dtStart))}\""
+        val endTime = if (event.allDay) "null" else "\"${timeFormat.format(Date(event.dtEnd))}\""
+        return """{"id":"${event.uid}","title":"${event.summary.replace("\"","\\\"")}","date":"$date","startTime":$startTime,"endTime":$endTime,"isAllDay":${event.allDay},"location":"${event.location.replace("\"","\\\"")}","recurrence":${if (event.rrule.isNullOrBlank()) "null" else "\"${event.rrule}\""}}"""
     }
 
     private fun mergeWithExisting(extracted: ExtractedEvent, existing: ICalEvent): ExtractedEvent {

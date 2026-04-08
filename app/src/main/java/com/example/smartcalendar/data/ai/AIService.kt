@@ -18,7 +18,8 @@ interface AIService {
         text: String,
         currentDate: String,
         timezone: String,
-        calendarContext: List<CalendarContextEvent>? = null
+        calendarContext: List<CalendarContextEvent>? = null,
+        conversationHistory: List<Pair<String, String>>? = null // List of (role, text) pairs
     ): ProcessingResult
 
     /**

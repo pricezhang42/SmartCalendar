@@ -22,6 +22,11 @@ import java.util.concurrent.TimeUnit
  */
 class GeminiProvider : AIService {
 
+    /**
+     * Function executor for calendar queries. Set by AICalendarAssistant.
+     */
+    var functionExecutor: ((name: String, args: Map<String, String>) -> String)? = null
+
     companion object {
         private const val TAG = "GeminiProvider"
         private const val MODEL = "gemini-2.5-flash-lite"
@@ -69,8 +74,18 @@ class GeminiProvider : AIService {
         text: String,
         currentDate: String,
         timezone: String,
-        calendarContext: List<CalendarContextEvent>?
-    ): ProcessingResult = executeAndParse(buildTextParsingPrompt(text, currentDate, timezone, calendarContext))
+        calendarContext: List<CalendarContextEvent>?,
+        conversationHistory: List<Pair<String, String>>?
+    ): ProcessingResult {
+        if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
+            return ProcessingResult.Error("Gemini API key not configured")
+        }
+        val prompt = buildTextParsingPrompt(text, currentDate, timezone, calendarContext)
+        return generateContent(prompt, conversationHistory = conversationHistory).fold(
+            onSuccess = { parseGeminiResponse(it) },
+            onFailure = { ProcessingResult.Error("Failed to process: ${it.message}", it as? Exception) }
+        )
+    }
 
     override fun streamParseText(
         text: String,
@@ -110,21 +125,13 @@ class GeminiProvider : AIService {
         timezone: String,
         calendarContext: List<CalendarContextEvent>?
     ): String {
-        val contextJson = calendarContext?.let {
-            json.encodeToString(
-                kotlinx.serialization.builtins.ListSerializer(CalendarContextEvent.serializer()),
-                it
-            )
-        }
         return """
 You are a calendar assistant. Extract calendar events from the following text.
-If the user is asking to SEARCH, FIND, or LOOK UP events (e.g., "search for conferences", "find rampup events", "what events are happening in..."), use your Google Search tool to find real events from the internet and return them with accurate titles, dates, times, and locations from the search results. Do NOT create a placeholder event with the search query as the title.
+If the user is asking to SEARCH, FIND, or LOOK UP events, use your Google Search tool to find real events from the internet with accurate titles, dates, times, and locations. Do NOT create a placeholder event with the search query as the title.
+You have access to the user's calendar via function calls. Use search_events to find events by name, get_events_by_date to check a date range, or get_event_details for full info about a specific event. Always use these functions when the user references existing events.
 
 Current date: $currentDate
 User timezone: $timezone
-
-Calendar context (use for updates/deletes when relevant):
-${contextJson ?: "[]"}
 
 Text to parse:
 "$text"
@@ -184,20 +191,12 @@ If no events found, return: {"message": "Summary and any follow-up question", "e
         timezone: String,
         calendarContext: List<CalendarContextEvent>?
     ): String {
-        val contextJson = calendarContext?.let {
-            json.encodeToString(
-                kotlinx.serialization.builtins.ListSerializer(CalendarContextEvent.serializer()),
-                it
-            )
-        }
         return """
 You are a calendar assistant. Extract calendar events from the attached image.
+You have access to the user's calendar via function calls if needed.
 
 Current date: $currentDate
 User timezone: $timezone
-
-Calendar context (use for updates/deletes when relevant):
-${contextJson ?: "[]"}
 
 Instructions:
 1. Read dates, times, titles, locations from the image
@@ -253,20 +252,12 @@ If no events found, return: {"message": "Summary and any follow-up question", "e
         timezone: String,
         calendarContext: List<CalendarContextEvent>?
     ): String {
-        val contextJson = calendarContext?.let {
-            json.encodeToString(
-                kotlinx.serialization.builtins.ListSerializer(CalendarContextEvent.serializer()),
-                it
-            )
-        }
         return """
 You are a calendar assistant. Extract calendar events from the attached document.
+You have access to the user's calendar via function calls if needed.
 
 Current date: $currentDate
 User timezone: $timezone
-
-Calendar context (use for updates/deletes when relevant):
-${contextJson ?: "[]"}
 
 Instructions:
 1. Extract ALL events mentioned in the document
@@ -331,9 +322,10 @@ $eventsJson
 User instruction: "$instruction"
 
 Determine the user's intent:
-- If the instruction is asking to SEARCH, FIND, or LOOK UP new events (e.g., "search for conferences", "find events in my area", "look up holidays"), use your Google Search tool to find real events from the internet. Return the existing events PLUS any new events you found, with accurate dates, times, locations, and titles from the search results.
+- If the instruction is a CONFIRMATION (e.g., "Yes", "OK", "Sure", "Do it", "Confirm", "Go ahead"), return the current events unchanged. The user is approving the proposed changes.
 - If the instruction is asking to MODIFY existing events (e.g., "change the time", "make it red", "move to Tuesday"), apply the changes to the relevant event(s) and return the modified list.
 - If the instruction is asking to ADD a new event by description (e.g., "also add a meeting tomorrow"), create the new event and append it to the existing list.
+- If the instruction is asking to SEARCH or FIND new events, return the existing events plus any new events found.
 
 For modifications:
 If a single occurrence changes time/date, remove that date from the recurring series via exceptionDates and add a new single event at the new time.
@@ -400,8 +392,16 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
                 )
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse Gemini response: $responseText", e)
-            ProcessingResult.Error("Failed to parse response: ${e.message}", e)
+            // Response is plain text (not JSON) — treat as a message with no events
+            Log.d(TAG, "Response is plain text, wrapping as message")
+            ProcessingResult.Success(
+                AIResponse(
+                    events = emptyList(),
+                    confidence = 0f,
+                    message = responseText.trim(),
+                    rawResponse = responseText
+                )
+            )
         }
     }
 
@@ -426,14 +426,47 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
         return if (end > start) trimmed.substring(start, end + 1) else trimmed
     }
 
+    private val calendarFunctions = listOf(
+        GeminiFunctionDeclaration(
+            name = "search_events",
+            description = "Search the user's calendar for events by title keyword. Use this ONLY when the user mentions a specific event name or title. Pass just the event name/title as the query, NOT dates or descriptions.",
+            parameters = GeminiFunctionParameters(
+                type = "OBJECT",
+                properties = mapOf("query" to GeminiPropertySchema("STRING", "Event title or name keyword to search for")),
+                required = listOf("query")
+            )
+        ),
+        GeminiFunctionDeclaration(
+            name = "get_events_by_date",
+            description = "Get ALL events on a specific date or date range from the user's calendar. Use this when the user mentions a date (e.g. 'April 16', 'tomorrow', 'next Monday'). This is the preferred function when the user references events by date.",
+            parameters = GeminiFunctionParameters(
+                type = "OBJECT",
+                properties = mapOf(
+                    "start_date" to GeminiPropertySchema("STRING", "Start date in YYYY-MM-DD format"),
+                    "end_date" to GeminiPropertySchema("STRING", "End date in YYYY-MM-DD format (same as start_date for a single day)")
+                ),
+                required = listOf("start_date", "end_date")
+            )
+        ),
+        GeminiFunctionDeclaration(
+            name = "get_event_details",
+            description = "Get full details of a specific event by its ID",
+            parameters = GeminiFunctionParameters(
+                type = "OBJECT",
+                properties = mapOf("event_id" to GeminiPropertySchema("STRING", "The event UID")),
+                required = listOf("event_id")
+            )
+        )
+    )
+
     /**
-     * Build the JSON request body for Gemini API.
+     * Build the initial request contents (user prompt + optional attachment).
      */
-    private fun buildRequestBody(
+    private fun buildInitialContents(
         prompt: String,
         attachmentMimeType: String? = null,
         attachmentBytes: ByteArray? = null
-    ): String {
+    ): List<GeminiRequestContent> {
         val parts = mutableListOf(GeminiPart(text = prompt))
         if (attachmentMimeType != null && attachmentBytes != null) {
             parts.add(GeminiPart(inlineData = GeminiInlineData(
@@ -441,45 +474,107 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
                 data = Base64.encodeToString(attachmentBytes, Base64.NO_WRAP)
             )))
         }
-        val request = GeminiGenerateRequest(
-            contents = listOf(GeminiRequestContent(parts = parts)),
-            tools = listOf(GeminiTool(google_search = GeminiGoogleSearch()))
-        )
-        return json.encodeToString(GeminiGenerateRequest.serializer(), request)
+        return listOf(GeminiRequestContent(parts = parts))
+    }
+
+    private val tools = listOf(
+        GeminiTool(function_declarations = calendarFunctions)
+    )
+
+    /**
+     * Parse a Gemini response. Returns the parsed response object.
+     */
+    private fun parseResponse(responseBody: String): GeminiGenerateResponse {
+        return json.decodeFromString(GeminiGenerateResponse.serializer(), responseBody)
     }
 
     /**
-     * Extract text from a Gemini response body. Returns null if empty.
+     * Extract text from response parts. Returns null if no text.
      */
-    private fun extractResponseText(responseBody: String): String? {
-        val parsed = json.decodeFromString(GeminiGenerateResponse.serializer(), responseBody)
-        return parsed.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
-            ?.takeIf { it.isNotBlank() }
+    private fun extractText(parts: List<GeminiPart>): String? {
+        return parts.firstOrNull { it.text != null }?.text?.trim()?.takeIf { it.isNotBlank() }
     }
 
+    /**
+     * Extract a function call from response parts. Returns null if none.
+     */
+    private fun extractFunctionCall(parts: List<GeminiPart>): GeminiFunctionCall? {
+        return parts.firstOrNull { it.functionCall != null }?.functionCall
+    }
+
+    /**
+     * Call Gemini API with multi-turn function calling support.
+     * If Gemini requests a function call, executes it locally and sends the result back.
+     * Max 3 rounds to prevent infinite loops.
+     */
     private suspend fun generateContent(
         prompt: String,
         attachmentMimeType: String? = null,
-        attachmentBytes: ByteArray? = null
+        attachmentBytes: ByteArray? = null,
+        conversationHistory: List<Pair<String, String>>? = null
     ): Result<String> {
         return try {
-            val body = buildRequestBody(prompt, attachmentMimeType, attachmentBytes)
-            val response = httpClient.post("$BASE_URL/$MODEL:generateContent") {
-                url { parameters.append("key", BuildConfig.GEMINI_API_KEY) }
-                contentType(ContentType.Application.Json)
-                setBody(body)
-            }
-            val responseBody = response.bodyAsText()
+            val contents = mutableListOf<GeminiRequestContent>()
 
-            if (!response.status.isSuccess()) {
-                return Result.failure(Exception("Gemini API error: ${response.status}"))
+            // Add conversation history as prior turns
+            conversationHistory?.forEach { (role, text) ->
+                val geminiRole = if (role == "user") "user" else "model"
+                contents.add(GeminiRequestContent(parts = listOf(GeminiPart(text = text)), role = geminiRole))
             }
 
-            Result.success(extractResponseText(responseBody) ?: """{"events": []}""")
+            // Add current prompt
+            contents.addAll(buildInitialContents(prompt, attachmentMimeType, attachmentBytes))
+
+            for (round in 0 until 3) {
+                val request = GeminiGenerateRequest(contents = contents, tools = tools)
+                val requestBody = json.encodeToString(GeminiGenerateRequest.serializer(), request)
+                Log.d(TAG, "Request tools: ${requestBody.substringAfter("\"tools\"").take(400)}")
+
+                val response = httpClient.post("$BASE_URL/$MODEL:generateContent") {
+                    url { parameters.append("key", BuildConfig.GEMINI_API_KEY) }
+                    contentType(ContentType.Application.Json)
+                    setBody(requestBody)
+                }
+
+                if (!response.status.isSuccess()) {
+                    val errorBody = response.bodyAsText()
+                    Log.e(TAG, "Gemini error ${response.status}: ${errorBody.take(500)}")
+                    return Result.failure(Exception("Gemini API error: ${response.status}"))
+                }
+
+                val parsed = parseResponse(response.bodyAsText())
+                val responseParts = parsed.candidates.firstOrNull()?.content?.parts ?: emptyList()
+
+                val functionCall = extractFunctionCall(responseParts)
+                if (functionCall != null && functionExecutor != null) {
+                    Log.d(TAG, "Function call: ${functionCall.name}(${functionCall.args})")
+                    val result = functionExecutor!!.invoke(functionCall.name, functionCall.args)
+                    Log.d(TAG, "Function result: ${result.take(300)}")
+
+                    contents.add(GeminiRequestContent(
+                        parts = listOf(GeminiPart(functionCall = functionCall)),
+                        role = "model"
+                    ))
+                    contents.add(GeminiRequestContent(
+                        parts = listOf(GeminiPart(functionResponse = GeminiFunctionResponse(
+                            name = functionCall.name,
+                            response = GeminiFunctionResponseContent(result = result)
+                        ))),
+                        role = "function"
+                    ))
+                } else {
+                    val text = extractText(responseParts)
+                    return Result.success(text ?: """{"events": []}""")
+                }
+            }
+
+            Result.success("""{"message": "I needed more information but couldn't complete the request. Please try again.", "events": []}""")
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
+    // --- Gemini API data classes ---
 
     @Serializable
     private data class GeminiGenerateRequest(
@@ -489,11 +584,32 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
 
     @Serializable
     private data class GeminiTool(
-        val google_search: GeminiGoogleSearch? = null
+        val google_search: GeminiGoogleSearch? = null,
+        val function_declarations: List<GeminiFunctionDeclaration>? = null
     )
 
     @Serializable
     private class GeminiGoogleSearch
+
+    @Serializable
+    private data class GeminiFunctionDeclaration(
+        val name: String,
+        val description: String,
+        val parameters: GeminiFunctionParameters
+    )
+
+    @Serializable
+    private data class GeminiFunctionParameters(
+        val type: String,
+        val properties: Map<String, GeminiPropertySchema>,
+        val required: List<String> = emptyList()
+    )
+
+    @Serializable
+    private data class GeminiPropertySchema(
+        val type: String,
+        val description: String
+    )
 
     @Serializable
     private data class GeminiRequestContent(
@@ -504,13 +620,32 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
     @Serializable
     private data class GeminiPart(
         val text: String? = null,
-        val inlineData: GeminiInlineData? = null
+        val inlineData: GeminiInlineData? = null,
+        val functionCall: GeminiFunctionCall? = null,
+        val functionResponse: GeminiFunctionResponse? = null
     )
 
     @Serializable
     private data class GeminiInlineData(
         val mimeType: String,
         val data: String
+    )
+
+    @Serializable
+    private data class GeminiFunctionCall(
+        val name: String,
+        val args: Map<String, String> = emptyMap()
+    )
+
+    @Serializable
+    private data class GeminiFunctionResponse(
+        val name: String,
+        val response: GeminiFunctionResponseContent
+    )
+
+    @Serializable
+    private data class GeminiFunctionResponseContent(
+        val result: String
     )
 
     @Serializable

@@ -250,12 +250,20 @@ class AIInputFragment : Fragment() {
             val result = when {
                 text.isNotEmpty() && attachments.isEmpty() -> {
                     // Text only: try refinement if session has events, otherwise new input
+                    // Build conversation history from recent messages (exclude typing indicator)
+                    val history = messages
+                        .filter { it.text != ChatMessageAdapter.TYPING_INDICATOR }
+                        .dropLast(1) // Exclude the current user message (already in prompt)
+                        .takeLast(10) // Keep last 10 messages for context
+                        .map { (if (it.role == ChatRole.USER) "user" else "model") to it.text }
+                        .takeIf { it.isNotEmpty() }
+
                     if (currentSessionId != null) {
                         val refineResult = aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
                         if (refineResult.isSuccess) refineResult
-                        else aiAssistant.processTextInput(text, userId)
+                        else aiAssistant.processTextInput(text, userId, history)
                     } else {
-                        aiAssistant.processTextInput(text, userId)
+                        aiAssistant.processTextInput(text, userId, history)
                     }
                 }
                 text.isEmpty() && attachments.isNotEmpty() -> {
