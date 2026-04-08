@@ -110,7 +110,7 @@
                 android:layout_height="40dp"
                 android:text="@string/ai_attach"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
-                app:icon="@android:drawable/ic_menu_upload"
+                app:icon="@drawable/ic_upload_24px"
                 app:iconPadding="6dp" />
 
             <com.google.android.material.button.MaterialButton

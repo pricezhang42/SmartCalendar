@@ -535,9 +535,11 @@ class CalendarFragment : Fragment() {
                 text = event.title
                 textSize = 10f
                 setTextColor(Color.WHITE)
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
                 setBackgroundResource(R.drawable.event_chip_background)
+                background = background.mutate()
                 background.setTint(
-                    if (event.color != 0) event.color 
+                    if (event.color != 0) event.color
                     else ContextCompat.getColor(requireContext(), R.color.event_purple)
                 )
                 setPadding(8, 4, 8, 4)
@@ -638,8 +640,8 @@ class MonthGridAdapter(
         // Style based on day type
         when {
             day.isToday -> {
-                holder.dayNumber.setBackgroundResource(R.drawable.circle_button_background)
-                holder.dayNumber.setTextColor(Color.WHITE)
+                holder.dayNumber.setBackgroundResource(R.drawable.today_circle_background)
+                holder.dayNumber.setTextColor(ContextCompat.getColor(context, R.color.primary_blue))
             }
             !day.isCurrentMonth -> {
                 holder.dayNumber.background = null
@@ -674,9 +676,10 @@ class MonthGridAdapter(
             val chip = LayoutInflater.from(context)
                 .inflate(R.layout.item_event_chip, holder.eventsContainer, false) as TextView
             chip.text = event.title
-            if (event.color != 0) {
-                chip.background.setTint(event.color)
-            }
+            val chipColor = if (event.color != 0) event.color
+                else ContextCompat.getColor(context, R.color.event_purple)
+            chip.background = chip.background.mutate()
+            chip.background.setTint(chipColor)
             chip.setOnClickListener {
                 onEventClick(event)
             }

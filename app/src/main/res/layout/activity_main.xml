@@ -100,7 +100,7 @@
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@android:drawable/ic_menu_agenda"
+                    android:src="@drawable/ic_view_agenda_24px"
                     android:contentDescription="@null" />
 
                 <TextView
@@ -132,7 +132,7 @@
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@android:drawable/ic_menu_day"
+                    android:src="@drawable/ic_view_day_24px"
                     android:contentDescription="@null" />
 
                 <TextView
@@ -164,7 +164,7 @@
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@android:drawable/ic_menu_week"
+                    android:src="@drawable/ic_view_week_24px"
                     android:contentDescription="@null" />
 
                 <TextView
@@ -189,8 +189,7 @@
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@android:drawable/ic_menu_month"
-                    android:tint="@color/primary_blue"
+                    android:src="@drawable/ic_view_month_24px"
                     android:contentDescription="@null" />
 
                 <TextView
@@ -216,7 +215,7 @@
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@android:drawable/ic_menu_today"
+                    android:src="@drawable/ic_view_year_24px"
                     android:contentDescription="@null" />
 
                 <TextView
