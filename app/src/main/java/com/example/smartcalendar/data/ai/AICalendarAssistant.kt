@@ -12,6 +12,7 @@ import com.example.smartcalendar.data.model.ICalEvent
 import com.example.smartcalendar.data.repository.LocalCalendarRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
@@ -76,6 +77,48 @@ class AICalendarAssistant private constructor(
             rawInput = text,
             inputType = InputType.TEXT
         )
+    }
+
+    /**
+     * Streaming variant of processTextInput. Emits partial text as Gemini generates,
+     * then emits the final result with extracted events.
+     */
+    fun processTextInputStreaming(text: String, userId: String): Flow<StreamUpdate> = flow {
+        Log.d(TAG, "Streaming text input: $text")
+
+        val currentDate = dateFormat.format(Date())
+        val timezone = TimeZone.getDefault().id
+        val calendarRepository = LocalCalendarRepository.getInstance(context)
+        calendarRepository.setUserId(userId)
+
+        val calendarContext = if (shouldIncludeCalendarContext(text)) {
+            buildCalendarContext(calendarRepository)
+        } else {
+            null
+        }
+
+        aiService.streamParseText(text, currentDate, timezone, calendarContext).collect { chunk ->
+            when (chunk) {
+                is StreamChunk.Partial -> {
+                    emit(StreamUpdate.TextUpdate(chunk.text))
+                }
+                is StreamChunk.Complete -> {
+                    val output = withContext(Dispatchers.IO) {
+                        handleProcessingResult(
+                            result = chunk.result,
+                            calendarRepository = calendarRepository,
+                            userId = userId,
+                            rawInput = text,
+                            inputType = InputType.TEXT
+                        )
+                    }
+                    output.fold(
+                        onSuccess = { emit(StreamUpdate.Done(it)) },
+                        onFailure = { emit(StreamUpdate.Error(it.message ?: "Processing failed")) }
+                    )
+                }
+            }
+        }
     }
 
     suspend fun processTextIntoSession(

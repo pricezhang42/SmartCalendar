@@ -86,3 +86,20 @@ sealed class ProcessingResult {
     data class Success(val response: AIResponse) : ProcessingResult()
     data class Error(val message: String, val exception: Exception? = null) : ProcessingResult()
 }
+
+/**
+ * Chunk emitted during streaming Gemini response.
+ */
+sealed class StreamChunk {
+    data class Partial(val text: String) : StreamChunk()
+    data class Complete(val result: ProcessingResult) : StreamChunk()
+}
+
+/**
+ * UI-level streaming update for the chat.
+ */
+sealed class StreamUpdate {
+    data class TextUpdate(val text: String) : StreamUpdate()
+    data class Done(val output: AIProcessingOutput) : StreamUpdate()
+    data class Error(val message: String) : StreamUpdate()
+}

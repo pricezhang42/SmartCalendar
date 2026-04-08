@@ -1,5 +1,7 @@
 package com.example.smartcalendar.data.ai
 
+import kotlinx.coroutines.flow.Flow
+
 /**
  * Interface for AI services that extract calendar events from input.
  */
@@ -57,4 +59,15 @@ interface AIService {
         events: List<ExtractedEvent>,
         instruction: String
     ): ProcessingResult
+
+    /**
+     * Streaming variant of parseText. Emits partial text chunks during processing,
+     * then emits the final parsed result.
+     */
+    fun streamParseText(
+        text: String,
+        currentDate: String,
+        timezone: String,
+        calendarContext: List<CalendarContextEvent>? = null
+    ): Flow<StreamChunk>
 }

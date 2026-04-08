@@ -24,6 +24,7 @@ import com.example.smartcalendar.R
 import com.example.smartcalendar.data.ai.AICalendarAssistant
 import com.example.smartcalendar.data.ai.WhisperTranscriber
 import com.example.smartcalendar.data.ai.AIProcessingOutput
+import com.example.smartcalendar.data.ai.StreamUpdate
 import com.example.smartcalendar.data.repository.AuthRepository
 import com.example.smartcalendar.databinding.FragmentAiInputBinding
 import kotlinx.coroutines.launch
@@ -244,18 +245,44 @@ class AIInputFragment : Fragment() {
             binding.textInput.setText("")
             addMessage(ChatMessage(ChatRole.USER, text))
         }
-        setLoading(true)
-
         lifecycleScope.launch {
             val userId = AuthRepository.getInstance().getCurrentUserId() ?: ""
 
+            // Use streaming for text-only new conversations
+            val useStreaming = text.isNotEmpty() && attachments.isEmpty() && currentSessionId == null
+
+            if (useStreaming) {
+                // No spinner — dots in chat bubble serve as the indicator
+                setLoading(true, showSpinner = false)
+                addMessage(ChatMessage(ChatRole.ASSISTANT, "•  •  •"))
+
+                aiAssistant.processTextInputStreaming(text, userId).collect { update ->
+                    when (update) {
+                        is StreamUpdate.TextUpdate -> {
+                            // Keep showing dots while streaming (don't show partial text)
+                        }
+                        is StreamUpdate.Done -> {
+                            setLoading(false)
+                            val finalText = update.output.message?.takeIf { it.isNotBlank() }
+                                ?: getString(R.string.ai_review_ready)
+                            chatAdapter.replaceLast(ChatMessage(ChatRole.ASSISTANT, finalText))
+                            handleSuccess(update.output, skipMessage = true)
+                        }
+                        is StreamUpdate.Error -> {
+                            setLoading(false)
+                            chatAdapter.replaceLast(ChatMessage(ChatRole.ASSISTANT, update.message, isError = true))
+                        }
+                    }
+                }
+                return@launch
+            }
+
+            // Non-streaming paths — show spinner
+            setLoading(true)
             val result = when {
                 text.isNotEmpty() && attachments.isEmpty() -> {
-                    if (currentSessionId == null) {
-                        aiAssistant.processTextInput(text, userId)
-                    } else {
-                        aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
-                    }
+                    // Has session → refinement (non-streaming)
+                    aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
                 }
                 text.isEmpty() && attachments.isNotEmpty() -> {
                     processAttachments(userId, null)
@@ -341,7 +368,7 @@ class AIInputFragment : Fragment() {
         )
     }
 
-    private fun handleSuccess(output: AIProcessingOutput) {
+    private fun handleSuccess(output: AIProcessingOutput, skipMessage: Boolean = false) {
         if (currentSessionId == null) {
             currentSessionId = output.sessionId
             caliViewModel.currentSessionId = output.sessionId
@@ -349,9 +376,11 @@ class AIInputFragment : Fragment() {
         }
 
         binding.reviewButton.isEnabled = true
-        val responseText = output.message?.takeIf { it.isNotBlank() }
-            ?: getString(R.string.ai_review_ready)
-        addMessage(ChatMessage(ChatRole.ASSISTANT, responseText))
+        if (!skipMessage) {
+            val responseText = output.message?.takeIf { it.isNotBlank() }
+                ?: getString(R.string.ai_review_ready)
+            addMessage(ChatMessage(ChatRole.ASSISTANT, responseText))
+        }
     }
 
     private fun addMessage(message: ChatMessage) {
@@ -363,10 +392,10 @@ class AIInputFragment : Fragment() {
         caliViewModel.messages.addAll(messages)
     }
 
-    private fun setLoading(loading: Boolean) {
+    private fun setLoading(loading: Boolean, showSpinner: Boolean = true) {
         binding.processButton.isEnabled = !loading
         binding.processButton.text = if (loading) getString(R.string.ai_processing) else getString(R.string.ai_send)
-        binding.progressBar.visibility = if (loading) View.VISIBLE else View.GONE
+        binding.progressBar.visibility = if (loading && showSpinner) View.VISIBLE else View.GONE
         binding.textInput.isEnabled = !loading
         binding.reviewButton.isEnabled = !loading && !currentSessionId.isNullOrBlank()
         binding.attachButton.isEnabled = !loading

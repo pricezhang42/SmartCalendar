@@ -6,8 +6,9 @@
     android:layout_height="wrap_content"
     android:layout_marginVertical="4dp"
     app:cardCornerRadius="12dp"
-    app:cardElevation="2dp"
-    app:strokeWidth="0dp">
+    app:cardElevation="1dp"
+    app:strokeWidth="0dp"
+    app:cardBackgroundColor="#F7F7F8">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -47,19 +48,21 @@
                 android:layout_marginEnd="8dp"
                 android:textSize="11sp"
                 android:textStyle="bold"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="4dp"
-                android:background="@drawable/circle_button_background"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp"
+                android:background="@drawable/pill_badge_background"
                 android:textColor="@android:color/white" />
 
             <TextView
                 android:id="@+id/confidenceText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="12sp"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="4dp"
-                android:background="@drawable/circle_button_background" />
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp"
+                android:background="@drawable/pill_badge_background"
+                android:textColor="@android:color/white" />
 
         </LinearLayout>
 
@@ -74,7 +77,7 @@
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
-                android:src="@android:drawable/ic_menu_my_calendar"
+                android:src="@drawable/ic_clock_16px"
                 android:tint="@android:color/darker_gray"
                 android:contentDescription="@null" />
 
@@ -101,7 +104,7 @@
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
-                android:src="@android:drawable/ic_menu_mapmode"
+                android:src="@drawable/ic_location_16px"
                 android:tint="@android:color/darker_gray"
                 android:contentDescription="@null" />
 
@@ -128,7 +131,7 @@
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
-                android:src="@android:drawable/ic_menu_recent_history"
+                android:src="@drawable/ic_repeat_16px"
                 android:tint="@android:color/darker_gray"
                 android:contentDescription="@null" />
 
@@ -155,7 +158,7 @@
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
-                android:src="@android:drawable/ic_delete"
+                android:src="@drawable/ic_exception_16px"
                 android:tint="@android:color/darker_gray"
                 android:contentDescription="@null" />
 

@@ -124,7 +124,7 @@
         android:orientation="horizontal"
         android:padding="16dp"
         android:background="@android:color/white"
-        android:elevation="8dp">
+        android:elevation="4dp">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/rejectButton"

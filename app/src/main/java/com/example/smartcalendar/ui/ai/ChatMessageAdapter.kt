@@ -1,6 +1,9 @@
 package com.example.smartcalendar.ui.ai
 
+import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -43,12 +46,27 @@ class ChatMessageAdapter(
 
     override fun getItemCount(): Int = items.size
 
+    companion object {
+        const val TYPING_INDICATOR = "•  •  •"
+        private val TYPING_FRAMES = arrayOf("•", "•  •", "•  •  •")
+    }
+
     inner class ViewHolder(
         private val binding: ItemChatMessageBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private var typingHandler: Handler? = null
+        private var typingRunnable: Runnable? = null
+
         fun bind(message: ChatMessage) {
-            binding.messageText.text = message.text
+            // Stop any previous typing animation
+            stopTypingAnimation()
+
+            if (message.text == TYPING_INDICATOR) {
+                startTypingAnimation()
+            } else {
+                binding.messageText.text = message.text
+            }
             val density = binding.root.resources.displayMetrics.density
             val sideMargin = (48 * density).toInt()
             val params = (binding.messageContainer.layoutParams as? FrameLayout.LayoutParams)
@@ -66,13 +84,48 @@ class ChatMessageAdapter(
                 ?: GradientDrawable().apply {
                     cornerRadius = 18f * binding.root.resources.displayMetrics.density
                 }
-            val colorRes = when {
-                message.isError -> R.color.ai_confidence_low
-                message.role == ChatRole.USER -> R.color.primary_blue
-                else -> R.color.ai_confidence_medium
+
+            val bubbleColor: Int
+            val textColor: Int
+
+            when {
+                message.isError -> {
+                    bubbleColor = ContextCompat.getColor(binding.root.context, R.color.ai_confidence_low)
+                    textColor = Color.WHITE
+                }
+                message.role == ChatRole.USER -> {
+                    bubbleColor = ContextCompat.getColor(binding.root.context, R.color.primary_blue)
+                    textColor = Color.WHITE
+                }
+                else -> {
+                    // AI messages: light gray bubble with dark text (matches Figma)
+                    bubbleColor = Color.parseColor("#EDEDED")
+                    textColor = Color.parseColor("#1A1A1A")
+                }
             }
-            background.setColor(ContextCompat.getColor(binding.root.context, colorRes))
+
+            background.setColor(bubbleColor)
             binding.messageContainer.background = background
+            binding.messageText.setTextColor(textColor)
+        }
+
+        private fun startTypingAnimation() {
+            var frame = 0
+            typingHandler = Handler(Looper.getMainLooper())
+            typingRunnable = object : Runnable {
+                override fun run() {
+                    binding.messageText.text = TYPING_FRAMES[frame % TYPING_FRAMES.size]
+                    frame++
+                    typingHandler?.postDelayed(this, 400)
+                }
+            }
+            typingRunnable?.run()
+        }
+
+        private fun stopTypingAnimation() {
+            typingRunnable?.let { typingHandler?.removeCallbacks(it) }
+            typingHandler = null
+            typingRunnable = null
         }
     }
 }
