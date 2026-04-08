@@ -281,8 +281,14 @@ class AIInputFragment : Fragment() {
             setLoading(true)
             val result = when {
                 text.isNotEmpty() && attachments.isEmpty() -> {
-                    // Has session → refinement (non-streaming)
-                    aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
+                    // Has session → try refinement, fall back to new creation if no pending events
+                    val refineResult = aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
+                    if (refineResult.isFailure && refineResult.exceptionOrNull()?.message?.contains("No pending events") == true) {
+                        // No events to refine — treat as new input
+                        aiAssistant.processTextIntoSession(text, userId, currentSessionId!!)
+                    } else {
+                        refineResult
+                    }
                 }
                 text.isEmpty() && attachments.isNotEmpty() -> {
                     processAttachments(userId, null)
