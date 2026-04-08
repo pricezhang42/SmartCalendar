@@ -4,17 +4,34 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@android:color/white">
+    android:background="#F6F6FA">
 
-    <!-- Header -->
-    <TextView
-        android:layout_width="wrap_content"
+    <!-- Header section -->
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_margin="16dp"
-        android:text="@string/calendars_header"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        android:textColor="@android:color/black" />
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="My Calendars"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/black" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Manage your calendars and visibility"
+            android:textSize="14sp"
+            android:textColor="@android:color/darker_gray" />
+
+    </LinearLayout>
 
     <!-- Calendars List -->
     <androidx.recyclerview.widget.RecyclerView
@@ -22,33 +39,48 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:clipToPadding="false"
-        android:paddingHorizontal="16dp" />
+        android:paddingHorizontal="16dp"
+        android:paddingTop="8dp" />
 
-    <!-- Add New Calendar: black icon + black text, slightly compact padding -->
+    <!-- Add New Calendar (dashed border) -->
     <TextView
         android:id="@+id/addCalendarButton"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingVertical="12dp"
-        android:paddingHorizontal="16dp"
-        android:text="@string/add_calendar_button"
-        android:textSize="16sp"
-        android:textColor="@android:color/black"
-        android:drawablePadding="12dp"
-        android:background="?attr/selectableItemBackground"
-        app:drawableStartCompat="@android:drawable/ic_input_add"
-        app:drawableTint="@android:color/black" />
+        android:layout_height="52dp"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:text="+ New Calendar"
+        android:textSize="15sp"
+        android:textColor="@color/primary_blue"
+        android:fontFamily="sans-serif-medium"
+        android:background="@drawable/dashed_border_background"
+        android:foreground="?attr/selectableItemBackground" />
 
-    <TextView
+    <View
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- Logout button -->
+    <FrameLayout
         android:id="@+id/logoutButton"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="16dp"
-        android:text="@string/logout"
-        android:textSize="16sp"
-        android:textColor="@android:color/holo_red_dark"
-        android:drawablePadding="12dp"
-        android:background="?attr/selectableItemBackground"
-        app:drawableStartCompat="@android:drawable/ic_lock_power_off" />
+        android:layout_height="48dp"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/logout_button_background"
+        android:foreground="?attr/selectableItemBackground">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/logout"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/holo_red_dark" />
+
+    </FrameLayout>
 
 </LinearLayout>

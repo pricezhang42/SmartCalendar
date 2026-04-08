@@ -56,7 +56,8 @@ class MineFragment : Fragment() {
     private fun setupRecyclerView() {
         adapter = CalendarAdapter(
             onEditClick = { calendar -> showEditCalendarDialog(calendar) },
-            onDeleteClick = { calendar -> confirmDeleteCalendar(calendar) }
+            onDeleteClick = { calendar -> confirmDeleteCalendar(calendar) },
+            onToggleVisibility = { calendar -> toggleCalendarVisibility(calendar) }
         )
         binding.calendarsRecyclerView.layoutManager = LinearLayoutManager(context)
         binding.calendarsRecyclerView.adapter = adapter
@@ -66,6 +67,13 @@ class MineFragment : Fragment() {
     private fun refreshList() {
         lifecycleScope.launch {
             adapter.submitList(repository.getCalendars())
+        }
+    }
+
+    private fun toggleCalendarVisibility(calendar: LocalCalendar) {
+        lifecycleScope.launch {
+            repository.updateCalendar(calendar.copy(isVisible = !calendar.isVisible))
+            refreshList()
         }
     }
 
@@ -213,7 +221,8 @@ class MineFragment : Fragment() {
 
     inner class CalendarAdapter(
         private val onEditClick: (LocalCalendar) -> Unit,
-        private val onDeleteClick: (LocalCalendar) -> Unit
+        private val onDeleteClick: (LocalCalendar) -> Unit,
+        private val onToggleVisibility: (LocalCalendar) -> Unit
     ) : RecyclerView.Adapter<CalendarAdapter.ViewHolder>() {
 
         private var calendars = listOf<LocalCalendar>()
@@ -236,20 +245,45 @@ class MineFragment : Fragment() {
         override fun getItemCount() = calendars.size
 
         inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+            private val colorBar = itemView.findViewById<View>(R.id.calendarColorBar)
             private val colorDot = itemView.findViewById<View>(R.id.calendarColorDot)
+            private val checkmark = itemView.findViewById<android.widget.ImageView>(R.id.calendarCheckmark)
+            private val checkboxFrame = itemView.findViewById<android.widget.FrameLayout>(R.id.calendarCheckbox)
             private val nameView = itemView.findViewById<android.widget.TextView>(R.id.calendarName)
             private val subtitleView = itemView.findViewById<android.widget.TextView>(R.id.calendarSubtitle)
 
             fun bind(calendar: LocalCalendar) {
                 nameView.text = calendar.name
 
-                val dot = GradientDrawable()
-                dot.shape = GradientDrawable.OVAL
-                dot.setColor(calendar.color)
-                colorDot.background = dot
+                // Color accent bar (left side)
+                val bar = GradientDrawable()
+                bar.shape = GradientDrawable.RECTANGLE
+                bar.cornerRadius = 4f
+                bar.setColor(calendar.color)
+                colorBar.background = bar
+
+                // Color checkbox (right side, rounded square with checkmark)
+                val checkbox = GradientDrawable()
+                checkbox.shape = GradientDrawable.RECTANGLE
+                checkbox.cornerRadius = 8f
+                if (calendar.isVisible) {
+                    checkbox.setColor(calendar.color)
+                    checkmark.visibility = View.VISIBLE
+                } else {
+                    checkbox.setColor(Color.TRANSPARENT)
+                    checkbox.setStroke(2, calendar.color)
+                    checkmark.visibility = View.GONE
+                }
+                colorDot.background = checkbox
 
                 subtitleView.text = if (calendar.isDefault) "Default" else "Custom"
 
+                // Tap checkbox to toggle visibility
+                checkboxFrame.setOnClickListener {
+                    onToggleVisibility(calendar)
+                }
+
+                // Tap card to edit, long press to delete
                 itemView.setOnClickListener { onEditClick(calendar) }
                 itemView.setOnLongClickListener {
                     onDeleteClick(calendar)

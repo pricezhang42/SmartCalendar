@@ -1,52 +1,74 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Custom calendar row for Mine tab — compact spacing -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
-    android:paddingHorizontal="16dp"
-    android:paddingVertical="10dp"
-    android:background="?attr/selectableItemBackground">
+    android:layout_marginBottom="8dp"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="2dp"
+    app:strokeWidth="0dp"
+    app:cardBackgroundColor="@android:color/white">
 
-    <!-- Colour dot -->
-    <View
-        android:id="@+id/calendarColorDot"
-        android:layout_width="14dp"
-        android:layout_height="14dp"
-        android:layout_marginEnd="14dp" />
-
-    <!-- Name + subtitle column -->
     <LinearLayout
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp">
 
-        <TextView
-            android:id="@+id/calendarName"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="15sp"
-            android:textColor="@android:color/black"
-            android:textStyle="normal" />
+        <!-- Color accent bar -->
+        <View
+            android:id="@+id/calendarColorBar"
+            android:layout_width="4dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="14dp" />
 
-        <TextView
-            android:id="@+id/calendarSubtitle"
-            android:layout_width="wrap_content"
+        <!-- Name + subtitle column -->
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:textColor="@android:color/darker_gray"
-            android:layout_marginTop="1dp" />
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/calendarName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="16sp"
+                android:textColor="@android:color/black"
+                android:fontFamily="sans-serif-medium" />
+
+            <TextView
+                android:id="@+id/calendarSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:textColor="@android:color/darker_gray"
+                android:layout_marginTop="2dp" />
+
+        </LinearLayout>
+
+        <!-- Color checkbox with checkmark -->
+        <FrameLayout
+            android:id="@+id/calendarCheckbox"
+            android:layout_width="28dp"
+            android:layout_height="28dp">
+
+            <View
+                android:id="@+id/calendarColorDot"
+                android:layout_width="28dp"
+                android:layout_height="28dp" />
+
+            <ImageView
+                android:id="@+id/calendarCheckmark"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_margin="5dp"
+                android:src="@drawable/ic_check_rounded"
+                android:contentDescription="@null" />
+
+        </FrameLayout>
 
     </LinearLayout>
 
-    <!-- Edit chevron hint (invisible, just reserves space) -->
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="›"
-        android:textSize="20sp"
-        android:textColor="#CCCCCC" />
-
-</LinearLayout>
+</com.google.android.material.card.MaterialCardView>
