@@ -29,7 +29,7 @@ class GeminiProvider : AIService {
 
     companion object {
         private const val TAG = "GeminiProvider"
-        private const val MODEL = "gemini-2.5-flash-lite"
+        private const val MODEL = "gemini-3-flash-preview"
         private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
     }
 
@@ -456,6 +456,15 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
                 properties = mapOf("event_id" to GeminiPropertySchema("STRING", "The event UID")),
                 required = listOf("event_id")
             )
+        ),
+        GeminiFunctionDeclaration(
+            name = "search_internet",
+            description = "Search the internet for real-world events, schedules, or information. Use this when the user asks to find events that are NOT in their calendar (e.g., sports games, concerts, conferences, public events).",
+            parameters = GeminiFunctionParameters(
+                type = "OBJECT",
+                properties = mapOf("query" to GeminiPropertySchema("STRING", "The search query")),
+                required = listOf("query")
+            )
         )
     )
 
@@ -480,6 +489,34 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
     private val tools = listOf(
         GeminiTool(function_declarations = calendarFunctions)
     )
+
+    /**
+     * Execute an internet search via a separate Gemini call with google_search tool.
+     */
+    private suspend fun executeInternetSearch(query: String): String {
+        return try {
+            val searchRequest = GeminiGenerateRequest(
+                contents = listOf(GeminiRequestContent(parts = listOf(GeminiPart(text = query)))),
+                tools = listOf(GeminiTool(google_search = GeminiGoogleSearch()))
+            )
+            val body = json.encodeToString(GeminiGenerateRequest.serializer(), searchRequest)
+            val response = httpClient.post("$BASE_URL/$MODEL:generateContent") {
+                url { parameters.append("key", BuildConfig.GEMINI_API_KEY) }
+                contentType(ContentType.Application.Json)
+                setBody(body)
+            }
+            if (!response.status.isSuccess()) {
+                return """{"error": "Search failed: ${response.status}"}"""
+            }
+            val parsed = parseResponse(response.bodyAsText())
+            val text = parsed.candidates.firstOrNull()?.content?.parts
+                ?.firstOrNull { it.text != null }?.text?.trim()
+            text ?: """{"error": "No search results found"}"""
+        } catch (e: Exception) {
+            Log.e(TAG, "Internet search failed", e)
+            """{"error": "Search failed: ${e.message}"}"""
+        }
+    }
 
     /**
      * Parse a Gemini response. Returns the parsed response object.
@@ -526,7 +563,8 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
             contents.addAll(buildInitialContents(prompt, attachmentMimeType, attachmentBytes))
 
             for (round in 0 until 3) {
-                val request = GeminiGenerateRequest(contents = contents, tools = tools)
+                val noThinking = GeminiGenerationConfig(thinkingConfig = GeminiThinkingConfig(thinkingBudget = 0))
+                val request = GeminiGenerateRequest(contents = contents, tools = tools, generationConfig = noThinking)
                 val requestBody = json.encodeToString(GeminiGenerateRequest.serializer(), request)
                 Log.d(TAG, "Request tools: ${requestBody.substringAfter("\"tools\"").take(400)}")
 
@@ -542,18 +580,25 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
                     return Result.failure(Exception("Gemini API error: ${response.status}"))
                 }
 
-                val parsed = parseResponse(response.bodyAsText())
-                val responseParts = parsed.candidates.firstOrNull()?.content?.parts ?: emptyList()
+                val responseBody = response.bodyAsText()
+                val parsed = parseResponse(responseBody)
+                val responseContent = parsed.candidates.firstOrNull()?.content
+                val responseParts = responseContent?.parts ?: emptyList()
 
                 val functionCall = extractFunctionCall(responseParts)
-                if (functionCall != null && functionExecutor != null) {
+                if (functionCall != null) {
                     Log.d(TAG, "Function call: ${functionCall.name}(${functionCall.args})")
-                    val result = functionExecutor!!.invoke(functionCall.name, functionCall.args)
+                    val result = if (functionCall.name == "search_internet") {
+                        executeInternetSearch(functionCall.args["query"] ?: "")
+                    } else {
+                        functionExecutor?.invoke(functionCall.name, functionCall.args) ?: """{"error": "No executor"}"""
+                    }
                     Log.d(TAG, "Function result: ${result.take(300)}")
 
+                    // Preserve the FULL model response (includes thought_signature for thinking models)
                     contents.add(GeminiRequestContent(
-                        parts = listOf(GeminiPart(functionCall = functionCall)),
-                        role = "model"
+                        parts = responseParts,
+                        role = responseContent?.role ?: "model"
                     ))
                     contents.add(GeminiRequestContent(
                         parts = listOf(GeminiPart(functionResponse = GeminiFunctionResponse(
@@ -577,9 +622,20 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
     // --- Gemini API data classes ---
 
     @Serializable
+    private data class GeminiGenerationConfig(
+        val thinkingConfig: GeminiThinkingConfig? = null
+    )
+
+    @Serializable
+    private data class GeminiThinkingConfig(
+        val thinkingBudget: Int = 0
+    )
+
+    @Serializable
     private data class GeminiGenerateRequest(
         val contents: List<GeminiRequestContent>,
-        val tools: List<GeminiTool>? = null
+        val tools: List<GeminiTool>? = null,
+        val generationConfig: GeminiGenerationConfig? = null
     )
 
     @Serializable
@@ -622,7 +678,9 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
         val text: String? = null,
         val inlineData: GeminiInlineData? = null,
         val functionCall: GeminiFunctionCall? = null,
-        val functionResponse: GeminiFunctionResponse? = null
+        val functionResponse: GeminiFunctionResponse? = null,
+        val thoughtSignature: String? = null,
+        val thought: Boolean? = null
     )
 
     @Serializable
