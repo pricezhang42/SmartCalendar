@@ -582,7 +582,9 @@ class AICalendarAssistant private constructor(
             targetEventId = targetEventId,
             suggestedCalendarId = suggestedCalendarId,
             recurrenceScope = recurrenceScope,
-            instanceStartTime = instanceStartTime
+            instanceStartTime = instanceStartTime,
+            reminderMinutes = extracted.reminderMinutes,
+            reminderType = extracted.reminderType
         )
     }
 
@@ -722,7 +724,8 @@ class AICalendarAssistant private constructor(
         val date = dateFormat.format(Date(event.dtStart))
         val startTime = if (event.allDay) "null" else "\"${timeFormat.format(Date(event.dtStart))}\""
         val endTime = if (event.allDay) "null" else "\"${timeFormat.format(Date(event.dtEnd))}\""
-        return """{"id":"${event.uid}","title":"${event.summary.replace("\"","\\\"")}","date":"$date","startTime":$startTime,"endTime":$endTime,"isAllDay":${event.allDay},"location":"${event.location.replace("\"","\\\"")}","recurrence":${if (event.rrule.isNullOrBlank()) "null" else "\"${event.rrule}\""}}"""
+        val reminder = if (event.reminderMinutes != null) "\"${event.reminderMinutes} min, ${event.reminderType}\"" else "null"
+        return """{"id":"${event.uid}","title":"${event.summary.replace("\"","\\\"")}","date":"$date","startTime":$startTime,"endTime":$endTime,"isAllDay":${event.allDay},"location":"${event.location.replace("\"","\\\"")}","recurrence":${if (event.rrule.isNullOrBlank()) "null" else "\"${event.rrule}\""},"reminder":$reminder}"""
     }
 
     private fun mergeWithExisting(extracted: ExtractedEvent, existing: ICalEvent): ExtractedEvent {
@@ -1032,6 +1035,8 @@ class AICalendarAssistant private constructor(
             rrule = pending.recurrenceRule ?: existing.rrule,
             exdate = pending.exdate ?: existing.exdate,
             color = color,
+            reminderMinutes = pending.reminderMinutes ?: existing.reminderMinutes,
+            reminderType = pending.reminderType ?: existing.reminderType,
             lastModified = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
             syncStatus = com.example.smartcalendar.data.model.SyncStatus.PENDING

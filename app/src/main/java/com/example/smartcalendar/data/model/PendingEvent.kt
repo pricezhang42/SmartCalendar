@@ -71,6 +71,8 @@ data class PendingEvent(
     val targetEventId: String? = null,
     val recurrenceScope: PendingRecurrenceScope? = null,
     val instanceStartTime: Long? = null,
+    val reminderMinutes: Int? = null,
+    val reminderType: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     /**
@@ -95,6 +97,8 @@ data class PendingEvent(
             rrule = recurrenceRule,
             exdate = exdate,
             color = resolvedColor,
+            reminderMinutes = reminderMinutes,
+            reminderType = reminderType ?: "NOTIFICATION",
             syncStatus = SyncStatus.PENDING
         )
     }

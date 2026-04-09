@@ -326,6 +326,12 @@ class EventModalFragment : BottomSheetDialogFragment() {
         }
         parseExdates(event.exdate)
 
+        // Reminder
+        event.reminderMinutes?.let {
+            reminderMinutes = it
+            reminderType = event.reminderType ?: "NOTIFICATION"
+        }
+
         // Calendar
         event.suggestedCalendarId?.let { selectedCalendarId = it }
         selectedEventColor = event.suggestedColor
@@ -1085,7 +1091,9 @@ class EventModalFragment : BottomSheetDialogFragment() {
             } else {
                 original.instanceStartTime
             },
-            exdate = exdate
+            exdate = exdate,
+            reminderMinutes = reminderMinutes,
+            reminderType = reminderType
         )
 
         onPendingEventSave?.invoke(updated)

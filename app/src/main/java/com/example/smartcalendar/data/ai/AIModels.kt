@@ -33,7 +33,9 @@ data class ExtractedEvent(
     val action: AIAction = AIAction.CREATE,
     val targetEventId: String? = null,
     val scope: AIRecurrenceScope? = null,
-    val instanceDate: String? = null
+    val instanceDate: String? = null,
+    val reminderMinutes: Int? = null,    // null = no reminder, 0 = at event start, 5/10/15/30/60 etc.
+    val reminderType: String? = null     // "NOTIFICATION" or "ALARM"
 )
 
 @Serializable

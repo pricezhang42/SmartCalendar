@@ -156,6 +156,8 @@ Instructions:
     - The recurring event with exceptionDates including the original date
     - A separate single (non-recurring) event at the new date/time
 17. Do NOT create a duplicated recurring instance; use exceptionDates + a single event for single-occurrence changes
+18. If the user mentions a reminder or alarm, set reminderMinutes (e.g., "remind me 15 minutes before" → 15, "alarm when event starts" → 0, "remind me 1 day before" → 1440) and reminderType ("ALARM" for alarms, "NOTIFICATION" for reminders/notifications)
+19. If no reminder is mentioned, leave reminderMinutes as null
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
 {
@@ -177,7 +179,9 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
       "action": "CREATE|UPDATE|DELETE",
       "targetEventId": "required when UPDATE or DELETE",
       "scope": "THIS_INSTANCE|THIS_AND_FOLLOWING|ALL",
-      "instanceDate": "required for recurring updates/deletes on a specific date"
+      "instanceDate": "required for recurring updates/deletes on a specific date",
+      "reminderMinutes": "null (no reminder), 0 (at start), 5, 10, 15, 30, 60, or 1440 (1 day before)",
+      "reminderType": "NOTIFICATION or ALARM (default NOTIFICATION)"
     }
   ]
 }
@@ -238,7 +242,9 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
       "action": "CREATE|UPDATE|DELETE",
       "targetEventId": "required when UPDATE or DELETE",
       "scope": "THIS_INSTANCE|THIS_AND_FOLLOWING|ALL",
-      "instanceDate": "required for recurring updates/deletes on a specific date"
+      "instanceDate": "required for recurring updates/deletes on a specific date",
+      "reminderMinutes": "null (no reminder), 0 (at start), 5, 10, 15, 30, 60, or 1440 (1 day before)",
+      "reminderType": "NOTIFICATION or ALARM (default NOTIFICATION)"
     }
   ]
 }
@@ -299,7 +305,9 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no code 
       "action": "CREATE|UPDATE|DELETE",
       "targetEventId": "required when UPDATE or DELETE",
       "scope": "THIS_INSTANCE|THIS_AND_FOLLOWING|ALL",
-      "instanceDate": "required for recurring updates/deletes on a specific date"
+      "instanceDate": "required for recurring updates/deletes on a specific date",
+      "reminderMinutes": "null (no reminder), 0 (at start), 5, 10, 15, 30, 60, or 1440 (1 day before)",
+      "reminderType": "NOTIFICATION or ALARM (default NOTIFICATION)"
     }
   ]
 }
