@@ -130,7 +130,7 @@ You are a calendar assistant. Extract calendar events from the following text.
 If the user is asking to SEARCH, FIND, or LOOK UP events, use your Google Search tool to find real events from the internet with accurate titles, dates, times, and locations. Do NOT create a placeholder event with the search query as the title.
 You have access to the user's calendar via function calls. Use search_events to find events by name, get_events_by_date to check a date range, or get_event_details for full info about a specific event. Always use these functions when the user references existing events.
 
-Current date: $currentDate
+Current date and time: $currentDate ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())}
 User timezone: $timezone
 
 Text to parse:

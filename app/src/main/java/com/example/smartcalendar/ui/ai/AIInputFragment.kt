@@ -351,7 +351,7 @@ class AIInputFragment : Fragment() {
     }
 
     private fun handleSuccess(output: AIProcessingOutput, skipMessage: Boolean = false) {
-        if (currentSessionId == null) {
+        if (currentSessionId != output.sessionId) {
             currentSessionId = output.sessionId
             caliViewModel.currentSessionId = output.sessionId
             onSessionCreated?.invoke(output.sessionId)
