@@ -2,6 +2,7 @@ package com.example.smartcalendar.data.notification
 
 import android.app.KeyguardManager
 import android.content.Context
+import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -193,6 +194,9 @@ class AlarmActivity : AppCompatActivity() {
             }
         }
         wakeLock = null
+
+        // Stop the foreground service
+        stopService(Intent(this, AlarmService::class.java))
 
         finish()
     }
