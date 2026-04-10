@@ -65,7 +65,8 @@ class AICalendarAssistant private constructor(
     suspend fun processTextInput(
         text: String,
         userId: String,
-        conversationHistory: List<Pair<String, String>>? = null
+        conversationHistory: List<Pair<String, String>>? = null,
+        onStatus: ((String) -> Unit)? = null
     ): Result<AIProcessingOutput> = withContext(Dispatchers.IO) {
         Log.d(TAG, "Processing text input: $text")
 
@@ -74,7 +75,7 @@ class AICalendarAssistant private constructor(
         val calendarRepository = LocalCalendarRepository.getInstance(context)
         calendarRepository.setUserId(userId)
 
-        val result = aiService.parseText(text, currentDate, timezone, null, conversationHistory)
+        val result = aiService.parseText(text, currentDate, timezone, null, conversationHistory, onStatus)
         handleProcessingResult(
             result = result,
             calendarRepository = calendarRepository,

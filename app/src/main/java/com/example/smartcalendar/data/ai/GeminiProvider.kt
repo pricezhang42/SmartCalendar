@@ -75,13 +75,14 @@ class GeminiProvider : AIService {
         currentDate: String,
         timezone: String,
         calendarContext: List<CalendarContextEvent>?,
-        conversationHistory: List<Pair<String, String>>?
+        conversationHistory: List<Pair<String, String>>?,
+        onStatus: ((String) -> Unit)?
     ): ProcessingResult {
         if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
             return ProcessingResult.Error("Gemini API key not configured")
         }
         val prompt = buildTextParsingPrompt(text, currentDate, timezone, calendarContext)
-        return generateContent(prompt, conversationHistory = conversationHistory).fold(
+        return generateContent(prompt, conversationHistory = conversationHistory, onStatus = onStatus).fold(
             onSuccess = { parseGeminiResponse(it) },
             onFailure = { ProcessingResult.Error("Failed to process: ${it.message}", it as? Exception) }
         )
@@ -556,7 +557,8 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
         prompt: String,
         attachmentMimeType: String? = null,
         attachmentBytes: ByteArray? = null,
-        conversationHistory: List<Pair<String, String>>? = null
+        conversationHistory: List<Pair<String, String>>? = null,
+        onStatus: ((String) -> Unit)? = null
     ): Result<String> {
         return try {
             val contents = mutableListOf<GeminiRequestContent>()
@@ -596,6 +598,15 @@ Output ONLY a valid JSON object (no markdown, no code blocks):
                 val functionCall = extractFunctionCall(responseParts)
                 if (functionCall != null) {
                     Log.d(TAG, "Function call: ${functionCall.name}(${functionCall.args})")
+
+                    // Emit status so the UI can show what the AI is doing
+                    when (functionCall.name) {
+                        "search_internet" -> onStatus?.invoke("🔍 Searching: ${functionCall.args["query"]}")
+                        "get_events_by_date" -> onStatus?.invoke("📅 Checking calendar: ${functionCall.args["start_date"]}")
+                        "search_events" -> onStatus?.invoke("🔎 Finding: ${functionCall.args["query"]}")
+                        "get_event_details" -> onStatus?.invoke("📋 Loading event details")
+                    }
+
                     val result = if (functionCall.name == "search_internet") {
                         executeInternetSearch(functionCall.args["query"] ?: "")
                     } else {

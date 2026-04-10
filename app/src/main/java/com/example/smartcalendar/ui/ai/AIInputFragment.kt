@@ -247,23 +247,31 @@ class AIInputFragment : Fragment() {
             setLoading(true, showSpinner = false)
             addMessage(ChatMessage(ChatRole.ASSISTANT, ChatMessageAdapter.TYPING_INDICATOR))
 
+            // Status callback: updates the typing indicator bubble with what AI is doing
+            val onStatus: (String) -> Unit = { status ->
+                activity?.runOnUiThread {
+                    if (_binding != null) {
+                        chatAdapter.replaceLast(ChatMessage(ChatRole.ASSISTANT, status))
+                        binding.chatRecyclerView.scrollToPosition(chatAdapter.itemCount - 1)
+                    }
+                }
+            }
+
             val result = when {
                 text.isNotEmpty() && attachments.isEmpty() -> {
-                    // Text only: try refinement if session has events, otherwise new input
-                    // Build conversation history from recent messages (exclude typing indicator)
                     val history = messages
-                        .filter { it.text != ChatMessageAdapter.TYPING_INDICATOR }
-                        .dropLast(1) // Exclude the current user message (already in prompt)
-                        .takeLast(10) // Keep last 10 messages for context
+                        .filter { it.text != ChatMessageAdapter.TYPING_INDICATOR && !it.text.startsWith("🔍") && !it.text.startsWith("📅") && !it.text.startsWith("🔎") && !it.text.startsWith("📋") }
+                        .dropLast(1)
+                        .takeLast(10)
                         .map { (if (it.role == ChatRole.USER) "user" else "model") to it.text }
                         .takeIf { it.isNotEmpty() }
 
                     if (currentSessionId != null) {
                         val refineResult = aiAssistant.refineSessionEvents(currentSessionId!!, text, userId)
                         if (refineResult.isSuccess) refineResult
-                        else aiAssistant.processTextInput(text, userId, history)
+                        else aiAssistant.processTextInput(text, userId, history, onStatus)
                     } else {
-                        aiAssistant.processTextInput(text, userId, history)
+                        aiAssistant.processTextInput(text, userId, history, onStatus)
                     }
                 }
                 text.isEmpty() && attachments.isNotEmpty() -> {
