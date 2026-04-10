@@ -1,10 +1,13 @@
 package com.example.smartcalendar.ui.ai
 
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.FrameLayout
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
@@ -52,6 +55,7 @@ class ChatMessageAdapter(
 
     override fun onViewRecycled(holder: ViewHolder) {
         holder.stopTypingAnimation()
+        holder.stopPulse()
         super.onViewRecycled(holder)
     }
 
@@ -66,14 +70,21 @@ class ChatMessageAdapter(
         private val cornerRadius = CORNER_RADIUS_DP * density
 
         private var typingRunnable: Runnable? = null
+        private var pulseAnimator: ObjectAnimator? = null
 
         fun bind(message: ChatMessage) {
             stopTypingAnimation()
+            stopPulse()
 
             if (message.text == TYPING_INDICATOR) {
                 startTypingAnimation()
+                startPulse()
+            } else if (isStatusMessage(message.text)) {
+                binding.messageText.text = message.text
+                startPulse()
             } else {
                 binding.messageText.text = message.text
+                binding.messageContainer.alpha = 1f
             }
 
             val params = (binding.messageContainer.layoutParams as? FrameLayout.LayoutParams)
@@ -120,6 +131,27 @@ class ChatMessageAdapter(
         fun stopTypingAnimation() {
             typingRunnable?.let { binding.root.removeCallbacks(it) }
             typingRunnable = null
+        }
+
+        private fun startPulse() {
+            pulseAnimator = ObjectAnimator.ofFloat(binding.messageContainer, "alpha", 1f, 0.5f).apply {
+                duration = 800
+                repeatCount = ValueAnimator.INFINITE
+                repeatMode = ValueAnimator.REVERSE
+                interpolator = AccelerateDecelerateInterpolator()
+                start()
+            }
+        }
+
+        fun stopPulse() {
+            pulseAnimator?.cancel()
+            pulseAnimator = null
+            binding.messageContainer.alpha = 1f
+        }
+
+        private fun isStatusMessage(text: String): Boolean {
+            return text.startsWith("🔍") || text.startsWith("📅") ||
+                   text.startsWith("🔎") || text.startsWith("📋")
         }
     }
 }
