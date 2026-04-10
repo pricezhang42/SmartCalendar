@@ -16,8 +16,8 @@ class ChatMessageAdapter(
 ) : RecyclerView.Adapter<ChatMessageAdapter.ViewHolder>() {
 
     companion object {
-        const val TYPING_INDICATOR = "•  •  •"
-        private val TYPING_FRAMES = arrayOf("•", "•  •", "•  •  •")
+        const val TYPING_INDICATOR = "•••"
+        private val TYPING_FRAMES = arrayOf("•", "••", "•••")
         private const val TYPING_DELAY_MS = 400L
         private const val SIDE_MARGIN_DP = 48
         private const val CORNER_RADIUS_DP = 18f
@@ -102,7 +102,9 @@ class ChatMessageAdapter(
         }
 
         private fun startTypingAnimation() {
-            var frame = 0
+            // Set initial text immediately so the bubble isn't empty
+            binding.messageText.text = TYPING_FRAMES[0]
+            var frame = 1
             typingRunnable = object : Runnable {
                 override fun run() {
                     if (!binding.root.isAttachedToWindow) return
@@ -111,7 +113,8 @@ class ChatMessageAdapter(
                     binding.root.postDelayed(this, TYPING_DELAY_MS)
                 }
             }
-            typingRunnable?.run()
+            // Post the first animation frame instead of running synchronously
+            binding.root.postDelayed(typingRunnable!!, TYPING_DELAY_MS)
         }
 
         fun stopTypingAnimation() {
