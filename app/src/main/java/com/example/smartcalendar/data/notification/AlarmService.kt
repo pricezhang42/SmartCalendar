@@ -47,17 +47,24 @@ class AlarmService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @Suppress("DEPRECATION")
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service created")
 
-        // Acquire wake lock to keep device awake
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+
+        // Use SCREEN_BRIGHT_WAKE_LOCK to forcibly turn on the screen
+        // PARTIAL_WAKE_LOCK ignores ACQUIRE_CAUSES_WAKEUP — the screen stays off
+        // SCREEN_BRIGHT_WAKE_LOCK is deprecated but is the only reliable way on OEM devices (Vivo, Xiaomi, etc.)
         wakeLock = pm.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE,
             "SmartCalendar:AlarmServiceLock"
         )
         wakeLock?.acquire(5 * 60 * 1000L) // 5 minutes max
+        Log.d(TAG, "Screen wake lock acquired")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
