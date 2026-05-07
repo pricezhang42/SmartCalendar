@@ -32,13 +32,9 @@ android {
         buildConfigField("String", "SUPABASE_URL", "\"https://hobvpmfdoybihzvhlqwv.supabase.co\"")
         buildConfigField("String", "SUPABASE_KEY", "\"sb_publishable_CoY2tZ--v9PasviHcJHhog_If9yNVcb\"")
 
-        // Gemini API key (from local.properties)
-        val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY") ?: ""
-        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
-
-        // OpenAI API key for Whisper (from local.properties)
-        val openaiApiKey = localProperties.getProperty("OPENAI_API_KEY") ?: ""
-        buildConfigField("String", "OPENAI_API_KEY", "\"$openaiApiKey\"")
+        // SmartCalendar backend URL (from local.properties; default = Android emulator -> host)
+        val backendUrl = localProperties.getProperty("BACKEND_URL") ?: "http://10.0.2.2:5148"
+        buildConfigField("String", "BACKEND_URL", "\"$backendUrl\"")
     }
 
     buildTypes {
@@ -83,9 +79,10 @@ dependencies {
     implementation(libs.supabase.postgrest)
     implementation(libs.supabase.realtime)
     
-    // Ktor for Supabase and Gemini
+    // Ktor for Supabase and backend HTTP calls.
+    // Use only OkHttp engine — ktor-client-android doesn't support WebSockets,
+    // which breaks Supabase Realtime if auto-picked by Ktor's engine discovery.
     implementation(libs.ktor.client.core)
-    implementation(libs.ktor.client.android)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
     

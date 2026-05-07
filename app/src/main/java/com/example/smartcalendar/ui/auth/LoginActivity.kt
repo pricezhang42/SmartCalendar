@@ -3,7 +3,6 @@ package com.example.smartcalendar.ui.auth
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.smartcalendar.MainActivity
@@ -39,19 +38,14 @@ class LoginActivity : AppCompatActivity() {
         binding.signInButton.setOnClickListener {
             val email = binding.emailEditText.text.toString().trim()
             val password = binding.passwordEditText.text.toString()
-            
+
             if (validateInput(email, password)) {
                 signIn(email, password)
             }
         }
-        
-        binding.signUpButton.setOnClickListener {
-            val email = binding.emailEditText.text.toString().trim()
-            val password = binding.passwordEditText.text.toString()
-            
-            if (validateInput(email, password)) {
-                signUp(email, password)
-            }
+
+        binding.signUpLink.setOnClickListener {
+            startActivity(Intent(this, SignUpActivity::class.java))
         }
     }
     
@@ -78,48 +72,31 @@ class LoginActivity : AppCompatActivity() {
     private fun signIn(email: String, password: String) {
         showLoading(true)
         hideError()
-        
+
         lifecycleScope.launch {
             val result = authRepository.signInWithEmail(email, password)
             showLoading(false)
-            
+
             result.fold(
                 onSuccess = {
                     navigateToMain()
                 },
                 onFailure = { e ->
-                    showError(e.message ?: "Sign in failed")
+                    if (AuthRepository.isEmailNotConfirmedError(e)) {
+                        // User exists but hasn't verified — route to OTP screen.
+                        VerifyEmailActivity.start(this@LoginActivity, email)
+                    } else {
+                        showError(e.message ?: "Sign in failed")
+                    }
                 }
             )
         }
     }
-    
-    private fun signUp(email: String, password: String) {
-        showLoading(true)
-        hideError()
-        
-        lifecycleScope.launch {
-            val result = authRepository.signUpWithEmail(email, password)
-            showLoading(false)
-            
-            result.fold(
-                onSuccess = {
-                    Toast.makeText(this@LoginActivity, 
-                        "Account created! Check email for verification.", 
-                        Toast.LENGTH_LONG).show()
-                    navigateToMain()
-                },
-                onFailure = { e ->
-                    showError(e.message ?: "Sign up failed")
-                }
-            )
-        }
-    }
-    
+
     private fun showLoading(show: Boolean) {
         binding.progressBar.visibility = if (show) View.VISIBLE else View.GONE
         binding.signInButton.isEnabled = !show
-        binding.signUpButton.isEnabled = !show
+        binding.signUpLink.isEnabled = !show
     }
     
     private fun showError(message: String) {

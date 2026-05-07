@@ -11,7 +11,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
@@ -530,29 +532,35 @@ class MainActivity : AppCompatActivity(), CalendarFragment.OnEventClickListener 
     }
 
     private fun setupSyncStatusObserver() {
+        // Use repeatOnLifecycle(STARTED) so collection only happens when the activity is
+        // visible. StateFlow emits its current value to new collectors immediately, and
+        // collecting in onCreate would fire refreshCalendar() before the fragment view
+        // has been inflated -> NPE on _binding.
         lifecycleScope.launch {
-            syncManager.syncStatus.collect { status ->
-                when (status) {
-                    SyncManager.SyncState.SYNCING -> {
-                        syncMenuItem?.isEnabled = false
-                        supportActionBar?.subtitle = getString(R.string.syncing)
-                    }
-                    SyncManager.SyncState.SUCCESS -> {
-                        syncMenuItem?.isEnabled = true
-                        supportActionBar?.subtitle = null
-                        refreshCalendar()
-                    }
-                    SyncManager.SyncState.ERROR -> {
-                        syncMenuItem?.isEnabled = true
-                        supportActionBar?.subtitle = null
-                    }
-                    SyncManager.SyncState.IDLE -> {
-                        syncMenuItem?.isEnabled = true
-                        supportActionBar?.subtitle = null
-                    }
-                    SyncManager.SyncState.OFFLINE -> {
-                        syncMenuItem?.isEnabled = true
-                        supportActionBar?.subtitle = getString(R.string.offline_mode)
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                syncManager.syncStatus.collect { status ->
+                    when (status) {
+                        SyncManager.SyncState.SYNCING -> {
+                            syncMenuItem?.isEnabled = false
+                            supportActionBar?.subtitle = getString(R.string.syncing)
+                        }
+                        SyncManager.SyncState.SUCCESS -> {
+                            syncMenuItem?.isEnabled = true
+                            supportActionBar?.subtitle = null
+                            refreshCalendar()
+                        }
+                        SyncManager.SyncState.ERROR -> {
+                            syncMenuItem?.isEnabled = true
+                            supportActionBar?.subtitle = null
+                        }
+                        SyncManager.SyncState.IDLE -> {
+                            syncMenuItem?.isEnabled = true
+                            supportActionBar?.subtitle = null
+                        }
+                        SyncManager.SyncState.OFFLINE -> {
+                            syncMenuItem?.isEnabled = true
+                            supportActionBar?.subtitle = getString(R.string.offline_mode)
+                        }
                     }
                 }
             }

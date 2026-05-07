@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.smartcalendar.R
 import com.example.smartcalendar.data.model.PendingEvent
+import com.example.smartcalendar.data.remote.BackendWarmer
 import com.example.smartcalendar.ui.event.EventModalFragment
 
 /**
@@ -27,6 +28,10 @@ class AIAssistantActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_ai_assistant)
+
+        // Wake up the backend now so that cold starts overlap with user think-time
+        // instead of with the actual /ai/* or /speech/transcribe call.
+        BackendWarmer.warmup()
 
         currentSessionId = savedInstanceState?.getString("session_id")
         inputFragment = supportFragmentManager.findFragmentByTag(TAG_INPUT) as? AIInputFragment

@@ -70,9 +70,12 @@ class CalendarFragment : Fragment() {
     }
 
     fun loadCalendarData() {
-        // Refresh all pages to ensure data consistency after CRUD operations
-        binding.monthViewPager.adapter?.notifyDataSetChanged()
-        binding.weekViewPager.adapter?.notifyDataSetChanged()
+        // Guard: callers (e.g. MainActivity sync observer) may invoke this while the
+        // fragment is detached or its view hasn't been created yet — common right after
+        // login on a fresh account.
+        val b = _binding ?: return
+        b.monthViewPager.adapter?.notifyDataSetChanged()
+        b.weekViewPager.adapter?.notifyDataSetChanged()
     }
 
     private fun setupWeekdayHeaders() {

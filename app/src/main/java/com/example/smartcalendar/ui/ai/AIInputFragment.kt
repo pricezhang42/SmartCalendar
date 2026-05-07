@@ -148,7 +148,7 @@ class AIInputFragment : Fragment() {
     }
 
     private fun checkApiKey() {
-        if (BuildConfig.GEMINI_API_KEY.isEmpty()) {
+        if (BuildConfig.BACKEND_URL.isEmpty()) {
             binding.errorText.text = getString(R.string.ai_api_key_missing)
             binding.errorText.visibility = View.VISIBLE
             binding.processButton.isEnabled = false

@@ -9,7 +9,10 @@ import android.media.MediaRecorder
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.example.smartcalendar.BuildConfig
+import com.example.smartcalendar.data.remote.SupabaseClient
+import io.github.jan.supabase.auth.auth
 import io.ktor.client.*
+import io.ktor.client.request.*
 import io.ktor.client.engine.okhttp.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
@@ -26,20 +29,21 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Records audio and transcribes via OpenAI Whisper API.
- * Records raw PCM, converts to WAV, sends to https://api.openai.com/v1/audio/transcriptions.
- * Reuses Ktor HTTP client (same engine as GeminiProvider).
+ * Records audio and transcribes via the SmartCalendar backend's /speech/transcribe endpoint.
+ * Records raw PCM, converts to WAV, and uploads. The backend proxies to OpenAI Whisper.
  *
  * Lifecycle: create once per Fragment, call release() in onDestroyView.
  */
-class WhisperTranscriber(private val context: Context) {
+class WhisperTranscriber(
+    private val context: Context,
+    private val baseUrl: String = BuildConfig.BACKEND_URL
+) {
 
     companion object {
         private const val TAG = "WhisperTranscriber"
         private const val SAMPLE_RATE = 16000
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-        private const val WHISPER_URL = "https://api.openai.com/v1/audio/transcriptions"
     }
 
     sealed class State {
@@ -154,8 +158,14 @@ class WhisperTranscriber(private val context: Context) {
         val durationSecs = pcmData.size / (SAMPLE_RATE * 2)
         Log.d(TAG, "Recorded ${pcmData.size} bytes (~${durationSecs}s)")
 
-        if (BuildConfig.OPENAI_API_KEY.isEmpty()) {
-            _state.value = State.Error("OpenAI API key not configured")
+        if (baseUrl.isEmpty()) {
+            _state.value = State.Error("Backend URL not configured")
+            return null
+        }
+
+        val token = runCatching { SupabaseClient.auth.currentSessionOrNull()?.accessToken }.getOrNull()
+        if (token.isNullOrBlank()) {
+            _state.value = State.Error("Not signed in")
             return null
         }
 
@@ -166,25 +176,28 @@ class WhisperTranscriber(private val context: Context) {
 
             val response = withContext(Dispatchers.IO) {
                 httpClient.submitFormWithBinaryData(
-                    url = WHISPER_URL,
+                    url = "$baseUrl/speech/transcribe",
                     formData = formData {
-                        append("file", wavData, Headers.build {
+                        append("File", wavData, Headers.build {
                             append(HttpHeaders.ContentDisposition, "filename=\"audio.wav\"")
                             append(HttpHeaders.ContentType, "audio/wav")
                         })
-                        append("model", "whisper-1")
-                        append("language", "en")
                     }
                 ) {
-                    header(HttpHeaders.Authorization, "Bearer ${BuildConfig.OPENAI_API_KEY}")
+                    header(HttpHeaders.Authorization, "Bearer $token")
                 }
             }
 
             val body = response.bodyAsText()
-            Log.d(TAG, "Whisper API response: ${response.status} $body")
+            Log.d(TAG, "Backend transcribe response: ${response.status} $body")
 
             if (!response.status.isSuccess()) {
-                _state.value = State.Error("Whisper API error: ${response.status}")
+                val msg = when (response.status.value) {
+                    401 -> "Not authorized. Please sign in again."
+                    429 -> "Daily quota reached. Try again tomorrow."
+                    else -> "Backend transcribe error: ${response.status}"
+                }
+                _state.value = State.Error(msg)
                 return null
             }
 

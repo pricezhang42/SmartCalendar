@@ -132,6 +132,21 @@
     <string name="sign_up">Create Account</string>
     <string name="sign_out">Sign Out</string>
     <string name="sync_now">Sync Now</string>
+    <string name="create_account_title">Create account</string>
+    <string name="no_account_prompt">Don\'t have an account? Create one</string>
+    <string name="have_account_prompt">Already have an account? Sign in</string>
+
+    <!-- Email Verification -->
+    <string name="verify_email_title">Verify your email</string>
+    <string name="verify_email_subtitle">We sent a verification code to %1$s</string>
+    <string name="verify_otp_hint">Verification code</string>
+    <string name="verify_otp_invalid">Enter the code from your email</string>
+    <string name="verify_button">Verify</string>
+    <string name="verify_success">Email verified</string>
+    <string name="verify_failed">Verification failed</string>
+    <string name="resend_button">Resend code</string>
+    <string name="code_resent">Code sent — check your inbox</string>
+    <string name="resend_failed">Failed to resend code</string>
 
     <!-- AI Assistant -->
     <string name="ai_assistant">Cali</string>

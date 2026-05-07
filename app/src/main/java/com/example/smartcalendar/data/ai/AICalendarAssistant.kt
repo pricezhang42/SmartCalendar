@@ -2,6 +2,7 @@ package com.example.smartcalendar.data.ai
 
 import android.content.Context
 import android.util.Log
+import com.example.smartcalendar.BuildConfig
 import com.example.smartcalendar.data.local.AppDatabase
 import com.example.smartcalendar.data.model.InputType
 import com.example.smartcalendar.data.model.PendingEvent
@@ -23,7 +24,7 @@ import java.util.*
  */
 class AICalendarAssistant private constructor(
     private val context: Context,
-    private val aiService: AIService = GeminiProvider()
+    private val aiService: AIService = BackendAiProvider(BuildConfig.BACKEND_URL)
 ) {
     companion object {
         private const val TAG = "AICalendarAssistant"
@@ -37,13 +38,6 @@ class AICalendarAssistant private constructor(
                     INSTANCE = it
                 }
             }
-        }
-    }
-
-    init {
-        // Wire up function executor for Gemini function calling
-        (aiService as? GeminiProvider)?.functionExecutor = { name, args ->
-            executeCalendarFunction(name, args)
         }
     }
 
@@ -679,54 +673,6 @@ class AICalendarAssistant private constructor(
                     calendarName = calendars[event.calendarId]?.name
                 )
             }
-    }
-
-    /**
-     * Execute a calendar function called by Gemini. Returns JSON result string.
-     */
-    private fun executeCalendarFunction(name: String, args: Map<String, String>): String {
-        val repository = LocalCalendarRepository.getInstance(context)
-        return try {
-            when (name) {
-                "search_events" -> {
-                    val query = args["query"] ?: ""
-                    val events = kotlinx.coroutines.runBlocking { repository.getAllEvents() }
-                    val matches = events.filter {
-                        it.summary.contains(query, ignoreCase = true) ||
-                        it.description.contains(query, ignoreCase = true)
-                    }
-                    val results = matches.map { eventToContextJson(it) }
-                    """{"events": [${results.joinToString(",")}]}"""
-                }
-                "get_events_by_date" -> {
-                    val startDate = args["start_date"] ?: ""
-                    val endDate = args["end_date"] ?: ""
-                    val start = dateFormat.parse(startDate)?.time ?: 0L
-                    val end = (dateFormat.parse(endDate)?.time ?: 0L) + 24 * 60 * 60 * 1000L // end of day
-                    val events = kotlinx.coroutines.runBlocking { repository.getAllEvents() }
-                    val matches = events.filter { it.dtStart in start..end }
-                    val results = matches.map { eventToContextJson(it) }
-                    """{"events": [${results.joinToString(",")}]}"""
-                }
-                "get_event_details" -> {
-                    val eventId = args["event_id"] ?: ""
-                    val event = kotlinx.coroutines.runBlocking { repository.getEvent(eventId) }
-                    if (event != null) eventToContextJson(event) else """{"error": "Event not found"}"""
-                }
-                else -> """{"error": "Unknown function: $name"}"""
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Function execution error: $name", e)
-            """{"error": "${e.message}"}"""
-        }
-    }
-
-    private fun eventToContextJson(event: ICalEvent): String {
-        val date = dateFormat.format(Date(event.dtStart))
-        val startTime = if (event.allDay) "null" else "\"${timeFormat.format(Date(event.dtStart))}\""
-        val endTime = if (event.allDay) "null" else "\"${timeFormat.format(Date(event.dtEnd))}\""
-        val reminder = if (event.reminderMinutes != null) "\"${event.reminderMinutes} min, ${event.reminderType}\"" else "null"
-        return """{"id":"${event.uid}","title":"${event.summary.replace("\"","\\\"")}","date":"$date","startTime":$startTime,"endTime":$endTime,"isAllDay":${event.allDay},"location":"${event.location.replace("\"","\\\"")}","recurrence":${if (event.rrule.isNullOrBlank()) "null" else "\"${event.rrule}\""},"reminder":$reminder}"""
     }
 
     private fun mergeWithExisting(extracted: ExtractedEvent, existing: ICalEvent): ExtractedEvent {
