@@ -108,14 +108,43 @@ class AIInputFragment : Fragment() {
         }
     }
 
+    /** Material indeterminate spinner used as TextInputLayout.startIconDrawable while transcribing. */
+    private val transcribingSpinner by lazy {
+        val spec = com.google.android.material.progressindicator.CircularProgressIndicatorSpec(
+            requireContext(), null, 0,
+            com.google.android.material.R.style.Widget_Material3_CircularProgressIndicator_ExtraSmall
+        )
+        com.google.android.material.progressindicator.IndeterminateDrawable
+            .createCircularDrawable(requireContext(), spec)
+    }
+
     private fun resetVoiceButton() {
         binding.voiceButton.setColorFilter(
             ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
         )
         binding.voiceButton.isEnabled = true
+        binding.voiceButton.visibility = View.VISIBLE
         binding.progressBar.visibility = View.GONE
+        binding.inputLayout.hint = getString(R.string.ai_input_hint)
+        binding.inputLayout.startIconDrawable = null
+
+        // Restore the hint colors that were swapped to grey during Transcribing.
+        if (savedDefaultHintColor != null || savedFocusedHintColor != null) {
+            binding.inputLayout.defaultHintTextColor = savedDefaultHintColor
+            binding.inputLayout.hintTextColor = savedFocusedHintColor
+            savedDefaultHintColor = null
+            savedFocusedHintColor = null
+        }
+
         (parentFragment as? CaliFragment)?.hideAudioOverlay()
     }
+
+    /** Text the user had typed before voice transcription started; restored after. */
+    private var savedTextBeforeTranscribe: String? = null
+
+    /** Original hint colors saved before swapping to grey for "Transcribing…". */
+    private var savedDefaultHintColor: android.content.res.ColorStateList? = null
+    private var savedFocusedHintColor: android.content.res.ColorStateList? = null
 
     private fun handleVoiceState(state: WhisperTranscriber.State) {
         when (state) {
@@ -127,19 +156,42 @@ class AIInputFragment : Fragment() {
                 (parentFragment as? CaliFragment)?.showAudioOverlay()
             }
             is WhisperTranscriber.State.Transcribing -> {
+                // Use TextInputLayout's own hint + start-icon mechanism instead of
+                // overlaying a custom view. This way the box, hint typography, and
+                // animation all match the rest of the input field automatically.
+                savedTextBeforeTranscribe = binding.textInput.text?.toString().orEmpty()
+                binding.textInput.setText("")
+                binding.inputLayout.hint = getString(R.string.voice_transcribing)
+                binding.inputLayout.startIconDrawable = transcribingSpinner
+
+                // Tint the hint light grey while transcribing.
+                savedDefaultHintColor = binding.inputLayout.defaultHintTextColor
+                savedFocusedHintColor = binding.inputLayout.hintTextColor
+                val grey = android.content.res.ColorStateList.valueOf(0xFF9E9E9E.toInt())
+                binding.inputLayout.defaultHintTextColor = grey
+                binding.inputLayout.hintTextColor = grey
+
+                binding.voiceButton.visibility = View.GONE
                 binding.voiceButton.isEnabled = false
-                binding.progressBar.visibility = View.VISIBLE
                 (parentFragment as? CaliFragment)?.hideAudioOverlay()
             }
             is WhisperTranscriber.State.Result -> {
-                resetVoiceButton()
-                val current = binding.textInput.text?.toString() ?: ""
-                val newText = if (current.isEmpty()) state.text else "$current ${state.text}"
+                // Restore prior text + append the transcribed result.
+                val saved = savedTextBeforeTranscribe.orEmpty()
+                val newText = if (saved.isEmpty()) state.text else "$saved ${state.text}"
                 binding.textInput.setText(newText)
                 binding.textInput.setSelection(newText.length)
+                savedTextBeforeTranscribe = null
+                resetVoiceButton()
                 whisperTranscriber.resetState()
             }
             is WhisperTranscriber.State.Error -> {
+                // Restore prior text untouched.
+                savedTextBeforeTranscribe?.let {
+                    binding.textInput.setText(it)
+                    binding.textInput.setSelection(it.length)
+                }
+                savedTextBeforeTranscribe = null
                 resetVoiceButton()
                 Toast.makeText(context, state.message, Toast.LENGTH_SHORT).show()
                 whisperTranscriber.resetState()
