@@ -2,6 +2,8 @@
 
 An intelligent Android calendar application that combines traditional calendar management with advanced AI capabilities powered by **Cali** (Calendar Intelligence).
 
+📦 **[Download the latest APK](https://github.com/pricezhang42/SmartCalendar/raw/main/app.apk)** (~10.6 MB) — side-load on Android.
+
 ![Android](https://img.shields.io/badge/Platform-Android-green.svg)
 ![Kotlin](https://img.shields.io/badge/Language-Kotlin-blue.svg)
 ![MinSDK](https://img.shields.io/badge/MinSDK-26-orange.svg)

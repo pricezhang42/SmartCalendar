@@ -10,13 +10,16 @@ import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
@@ -69,7 +72,13 @@ class BackendAiProvider(private val baseUrl: String) : AIService {
             calendarContext = calendarContext,
             conversationHistory = conversationHistory?.map { ConversationTurn(it.first, it.second) }
         )
-        return postJson("/ai/parse-text", json.encodeToString(ParseTextRequest.serializer(), body))
+        // Streaming endpoint: backend pushes "🤖 Thinking…", "🔍 Searching: …" status events
+        // before the final result, so the typing bubble updates in real time.
+        return postJsonStreaming(
+            endpoint = "/ai/parse-text-stream",
+            jsonBody = json.encodeToString(ParseTextRequest.serializer(), body),
+            onStatus = onStatus
+        )
     }
 
     override fun streamParseText(
@@ -144,6 +153,89 @@ class BackendAiProvider(private val baseUrl: String) : AIService {
         } catch (e: Exception) {
             Log.e(TAG, "postJson failed", e)
             ProcessingResult.Error("Backend error: ${e.message}", e)
+        }
+    }
+
+    /**
+     * SSE consumer. Reads `data: { ... }` lines, dispatches:
+     *   - type=status   → fires onStatus(text)
+     *   - type=complete → returns ProcessingResult.Success
+     *   - type=error    → returns ProcessingResult.Error
+     */
+    private suspend fun postJsonStreaming(
+        endpoint: String,
+        jsonBody: String,
+        onStatus: ((String) -> Unit)?
+    ): ProcessingResult {
+        val token = currentAccessToken()
+        if (token.isNullOrBlank()) {
+            return ProcessingResult.Error("Not signed in. Please log in before using AI features.")
+        }
+
+        return try {
+            var finalResult: ProcessingResult? = null
+
+            httpClient.preparePost("$baseUrl$endpoint") {
+                header(HttpHeaders.Authorization, "Bearer $token")
+                header(HttpHeaders.Accept, "text/event-stream")
+                contentType(ContentType.Application.Json)
+                setBody(jsonBody)
+            }.execute { response ->
+                if (!response.status.isSuccess()) {
+                    val body = response.bodyAsText()
+                    Log.e(TAG, "SSE error ${response.status}: ${body.take(500)}")
+                    val msg = when (response.status.value) {
+                        401 -> "Not authorized. Please sign in again."
+                        429 -> "Daily AI quota reached. Try again tomorrow."
+                        else -> "Backend returned ${response.status.value}: ${body.take(300)}"
+                    }
+                    finalResult = ProcessingResult.Error(msg)
+                    return@execute
+                }
+
+                val channel = response.bodyAsChannel()
+                while (!channel.isClosedForRead) {
+                    val line = channel.readUTF8Line() ?: break
+                    if (!line.startsWith("data:")) continue
+                    val payload = line.substringAfter("data:").trim()
+                    if (payload.isEmpty()) continue
+                    handleSseEvent(payload, onStatus)?.let { finalResult = it }
+                }
+            }
+
+            finalResult ?: ProcessingResult.Error("Stream ended without a result")
+        } catch (e: Exception) {
+            Log.e(TAG, "postJsonStreaming failed", e)
+            ProcessingResult.Error("Backend error: ${e.message}", e)
+        }
+    }
+
+    private fun handleSseEvent(
+        payload: String,
+        onStatus: ((String) -> Unit)?
+    ): ProcessingResult? {
+        return try {
+            val event = json.decodeFromString<SseEvent>(payload)
+            when (event.type) {
+                "status" -> {
+                    event.text?.let { onStatus?.invoke(it) }
+                    null
+                }
+                "complete" -> ProcessingResult.Success(
+                    AIResponse(
+                        events = event.events ?: emptyList(),
+                        confidence = event.confidence ?: 0f,
+                        message = event.message,
+                        rawResponse = event.rawResponse ?: payload,
+                        warnings = event.warnings ?: emptyList()
+                    )
+                )
+                "error" -> ProcessingResult.Error(event.message ?: "Backend error")
+                else -> null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse SSE event: $payload", e)
+            null
         }
     }
 
@@ -234,6 +326,18 @@ class BackendAiProvider(private val baseUrl: String) : AIService {
     private data class BackendAiResponse(
         val events: List<ExtractedEvent> = emptyList(),
         val confidence: Float = 0f,
+        val message: String? = null,
+        val rawResponse: String? = null,
+        val warnings: List<String>? = null
+    )
+
+    /** One line of `data: { ... }` from the SSE stream. Single shape, nullable fields. */
+    @Serializable
+    private data class SseEvent(
+        val type: String,
+        val text: String? = null,
+        val events: List<ExtractedEvent>? = null,
+        val confidence: Float? = null,
         val message: String? = null,
         val rawResponse: String? = null,
         val warnings: List<String>? = null
